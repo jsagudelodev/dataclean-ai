@@ -2,7 +2,15 @@
 
 from dataclean.carga import ErrorDeCargaInesperado, cargar_tabla
 from dataclean.clasificacion import RolColumna, clasificar_columnas
-from dataclean.telefono import normalizar_columna_telefono, normalizar_telefono
+from dataclean.telefono import (
+    TIPO_FIJO,
+    TIPO_INVALIDO,
+    TIPO_MOVIL,
+    clasificar_columna_telefono,
+    clasificar_telefono,
+    normalizar_columna_telefono,
+    normalizar_telefono,
+)
 
 __version__ = "0.1.0"
 
@@ -13,4 +21,9 @@ __all__ = [
     "RolColumna",
     "normalizar_telefono",
     "normalizar_columna_telefono",
+    "clasificar_telefono",
+    "clasificar_columna_telefono",
+    "TIPO_MOVIL",
+    "TIPO_FIJO",
+    "TIPO_INVALIDO",
 ]
