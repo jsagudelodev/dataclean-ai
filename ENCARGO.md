@@ -144,7 +144,7 @@ recuperar lo que se tiró.
   (3) un número que no se puede normalizar se conserva tal cual y se marca, **no
   se borra**.
 
-- ⬜ **DC.4 — Móvil, fijo o inválido.**
+- ✅ **DC.4 — Móvil, fijo o inválido.**
   *Cierre:* (1) clasifica correctamente un móvil colombiano (10 dígitos que
   empiezan por 3), un fijo con indicativo y un número de 5 dígitos que no es ni
   una cosa ni otra; (2) **la trampa, y es el criterio de vendible:** ningún móvil
