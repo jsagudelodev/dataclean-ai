@@ -210,7 +210,7 @@ recuperar lo que se tiró.
   pruebe algo, el dato tiene que **llegar de verdad** al camino que escribe el
   log: si el montaje no lo hace entrar, el test no vale.
 
-- ⬜ **DC.13 — Subir el archivo y recibir el resultado.**
+- ✅ **DC.13 — Subir el archivo y recibir el resultado.**
   El endpoint que junta todo lo anterior.
   *Cierre:* (1) `POST` con un archivo devuelve el reporte y un identificador para
   descargar el limpio; (2) un archivo corrupto o vacío devuelve un motivo
