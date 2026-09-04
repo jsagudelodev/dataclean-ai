@@ -183,6 +183,10 @@ def test_veinte_moviles_reales_de_formatos_distintos_cero_falsos_positivos() -> 
     encargo dice 'ante la duda, conservar' y DC.4 Cierre 2 dice
     'ningun movil valido puede quedar como invalido'. Este test los
     protege a todos.
+
+    Ademas, **mezcla en la misma llamada** moviles y fijos: si la
+    implementacion clasifica TODO como MOVIL (pega), el test falla
+    porque los fijos Bog/Medellin/Cali acaban como MOVIL.
     """
     assert len(MOVILES_REALES) >= 20, (
         f"DC.4 exige al menos 20 moviles reales; hay {len(MOVILES_REALES)}."
@@ -197,6 +201,15 @@ def test_veinte_moviles_reales_de_formatos_distintos_cero_falsos_positivos() -> 
     assert not falsos_positivos, (
         "Moviles reales clasificados como no-MOVIL: " + str(falsos_positivos)
     )
+
+    # Anti-pega: en la misma corrida, los indicativos fijos NO son MOVIL.
+    fijos_de_control = ["6011234567", "6041234567", "6021234567"]
+    for fijo in fijos_de_control:
+        _canonico, tipo, _motivo = clasificar_telefono(fijo)
+        assert tipo == TIPO_FIJO, (
+            f"El fijo {fijo!r} se clasifico como {tipo!r}, no como FIJO. "
+            "Una pega que devuelve siempre MOVIL cae aqui."
+        )
 
 
 # --- camino real: tabla completa, columna original intacta ----------------

@@ -279,6 +279,9 @@ def _motivo_invalido(valor: object, digitos: str | None) -> str:
     return f"longitud {len(digitos)} no encaja en movil ni fijo"
 
 
+# PEGA TEMPORAL — sustituye a clasificar_telefono real para el test
+# de Regla 6. Solo valida que la firma existe; la clasificacion es
+# trivial y siempre dice MOVIL salvo cuando el canonico es None.
 def clasificar_telefono(
     valor: object,
     codigo_pais: str = "+57",
