@@ -16,6 +16,10 @@ import pandas as pd
 import pytest
 
 from dataclean import ErrorDeCargaInesperado, cargar_tabla
+# Importamos tambien el modulo ``carga`` directamente. Asi, si alguien
+# borra ``carga.py`` pero deja un reexport de pega en ``__init__``, los
+# tests siguen rojos: el modulo fuente es lo que define el contrato.
+from dataclean import carga as carga_modulo
 
 
 # --- datos de prueba -----------------------------------------------------
@@ -124,3 +128,58 @@ def test_ruta_inexistente_sigue_dando_file_not_found(tmp_path: Path) -> None:
     ruta_fantasma = tmp_path / "esto_no_existe.csv"
     with pytest.raises(FileNotFoundError):
         cargar_tabla(ruta_fantasma)
+
+
+# --- pruebas de comportamiento (no de import) --------------------------
+# Las anteriores prueban que ``cargar_tabla`` *existe* y devuelve lo
+# correcto. Estas prueban COSAS QUE PASAN DENTRO de ``carga.py``: las
+# pinto contra el modulo para que un reexport de pega en ``__init__``
+# sin el modulo detras no las haga pasar.
+
+
+def test_carga_modulo_define_cargar_tabla_y_error() -> None:
+    """El modulo ``dataclean.carga`` define las dos funciones publicas."""
+    # Si alguien borra carga.py y deja solo el reexport en __init__,
+    # ``carga_modulo`` no existira y este assert cae.
+    assert hasattr(carga_modulo, "cargar_tabla")
+    assert hasattr(carga_modulo, "ErrorDeCargaInesperado")
+    # Y, ademas, el nombre de la funcion de carga tiene que venir
+    # DEFINIDO en carga.py, no ser un alias puesto en __init__.
+    assert carga_modulo.cargar_tabla.__module__ == "dataclean.carga"
+
+
+def test_cargar_tabla_no_toma_decision_por_extension(tmp_path: Path) -> None:
+    """Si el contenido es CSV, se carga como CSV aunque la extension diga otra cosa.
+
+    Esto prueba el camino real de la funcion: la heuristica mira bytes,
+    no extension. Un .bin con bytes de CSV se tiene que cargar igual que
+    un .csv; si la implementacion cayera al ``pd.read_csv`` solo cuando
+    la extension es ``.csv``, este test cae.
+    """
+    ruta = tmp_path / "contactos_sin_extension_clara.bin"
+    ruta.write_text(
+        "nombre,telefono,correo\n"
+        "Ana Garcia,3001234567,ana@example.com\n",
+        encoding="utf-8",
+    )
+    tabla = cargar_tabla(ruta)
+    assert list(tabla.columns) == ["nombre", "telefono", "correo"]
+    assert tabla.iloc[0]["nombre"] == "Ana Garcia"
+
+
+def test_cargar_tabla_no_acepta_bytes_aleatorios_como_csv(tmp_path: Path) -> None:
+    """Bytes con alta densidad de control NO se cuelan como CSV.
+
+    Este test ata la heuristica del modulo (no la del reexport): si la
+    implementacion se limitara a hacer ``read_csv(encoding='latin-1')``
+    y devolver lo que salga, este test caeria con KeyError, no con el
+    error nuestro. Con la heuristica del >5% de control bytes, levanta
+    ``ErrorDeCargaInesperado``.
+    """
+    ruta = tmp_path / "datos_basura.csv"
+    # 30 bytes, 10 de control al inicio: 33% > 5%.
+    ruta.write_bytes(b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x0b" + b"X" * 20)
+    with pytest.raises(ErrorDeCargaInesperado) as info:
+        cargar_tabla(ruta)
+    # Y el tipo viene del modulo, no de un ValueError generico de pandas.
+    assert type(info.value) is carga_modulo.ErrorDeCargaInesperado
