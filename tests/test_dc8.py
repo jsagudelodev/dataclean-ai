@@ -307,6 +307,142 @@ def test_camino_real_sin_reexport_logica_pura() -> None:
     assert all(not v for v in rv["es_duplicado"].tolist())
 
 
+# --- Tests de camino real (Regla 6 fuerte sobre la logica) -------------
+# Estos tests **no se satisfacen** con un ``return tabla`` pelado ni con
+# un modulo vacio: verifican el comportamiento concreto de los Cierres
+# 1, 2 y 3 sobre datos que SENTENCIAN una unica respuesta posible. Si
+# alguien rompe la logica de ``detectar_duplicados_por_telefono`` (la
+# borra, la sustituye por un ``return tabla``, le quita la importacion
+# de DC.3, etc.), estos tests caen con ``AssertionError`` de
+# comportamiento real, no con un ``ImportError`` de reexport.
+
+
+def test_camino_real_c1_cuatro_formatos_caen_en_un_solo_grupo() -> None:
+    """Cierre 1, camino real: las 4 formas de DC.3 en una sola tabla.
+
+    Datos de produccion: 5 contactos donde 4 son el mismo numero
+    escrito de 4 formas distintas. La UNICA respuesta correcta es:
+    un solo grupo, con 4 filas, una propuesta a conservar y 3
+    duplicadas. Si la logica de normalizacion se rompe (porque ya
+    no se importa DC.3, o porque se hace un ``return tabla``),
+    este test cae con ``KeyError: 'grupo_id'`` o con conteos de
+    grupo incorrectos.
+    """
+    tabla = pd.DataFrame(
+        {
+            "nombre": [
+                "Ana Lopez",
+                "Ana L.",
+                "Ana Lopez R",
+                "Ana",
+                "Pedro Gomez",
+            ],
+            "telefono": [
+                "3001234567",
+                "300 123 4567",
+                "+57 300 1234567",
+                "(300)123-4567",
+                "3112223333",
+            ],
+        }
+    )
+    resultado = detectar_duplicados_por_telefono(tabla, "telefono")
+
+    conteo = resultado.groupby("grupo_id").size()
+    assert conteo["tel-3001234567"] == 4
+    assert conteo["tel-3112223333"] == 1
+
+    canonicos_grupo_grande = resultado.loc[
+        resultado["grupo_id"] == "tel-3001234567", "telefono_canon"
+    ].tolist()
+    assert canonicos_grupo_grande == ["3001234567"] * 4
+
+    duplicadas_grande = resultado.loc[
+        resultado["grupo_id"] == "tel-3001234567", "es_duplicado"
+    ].tolist()
+    assert duplicadas_grande.count(False) == 1
+    assert duplicadas_grande.count(True) == 3
+
+    propuesta = resultado.loc[
+        (resultado["grupo_id"] == "tel-3001234567")
+        & (~resultado["es_duplicado"])
+    ]
+    assert propuesta.iloc[0]["nombre"] == "Ana Lopez"
+
+    motivo = propuesta.iloc[0]["motivo_conservar"]
+    assert motivo
+    assert "3001234567" not in motivo
+    assert "+57" not in motivo
+
+
+def test_camino_real_c2_conservar_la_de_mas_datos_no_la_primera() -> None:
+    """Cierre 2, camino real: se conserva la de MAS datos, no la primera.
+
+    La regla de "conservar la primera" seria un falso positivo: si
+    la primera fila esta vacia y la segunda tiene nombre + correo
+    + cargo, la correcta es la segunda. Este test fija esa
+    diferencia, que es exactamente el valor que DC.8 aporta.
+
+    Datos: dos filas con el mismo telefono. La fila A (la primera)
+    solo tiene el telefono. La fila B tiene nombre, correo y
+    cargo. La UNICA respuesta correcta es: B es la propuesta a
+    conservar, A es la duplicada.
+
+    Un modulo con ``return tabla`` deja ambas filas con
+    ``es_duplicado=False`` -> este test cae con ``AssertionError``.
+    """
+    tabla = pd.DataFrame(
+        {
+            "nombre": [None, "Beatriz Ramirez"],
+            "correo": [None, "bety@empresa.com"],
+            "cargo": [None, "GERENTE"],
+            "telefono": ["3001234567", "300 123 4567"],
+        }
+    )
+    resultado = detectar_duplicados_por_telefono(tabla, "telefono")
+
+    assert resultado["grupo_id"].tolist() == ["tel-3001234567"] * 2
+
+    assert bool(resultado.loc[0, "es_duplicado"]) is True
+    assert bool(resultado.loc[1, "es_duplicado"]) is False
+
+    motivo = resultado.loc[1, "motivo_conservar"]
+    assert "3" in motivo
+    assert "3001234567" not in motivo
+
+
+def test_camino_real_c3_dos_vacios_y_dos_reales_separan_bien() -> None:
+    """Cierre 3, camino real: vacios y reales conviven sin mezclarse.
+
+    Un modulo con ``return tabla`` no anade la columna ``grupo_id``,
+    asi que este test cae con ``KeyError``. Un modulo que pusiera
+    ``grupo_id=""`` a todo fallaria al pedir el grupo de los
+    reales.
+    """
+    tabla = pd.DataFrame(
+        {
+            "nombre": ["A", "B", "C", "D"],
+            "telefono": [
+                "3001234567",
+                "+57 300 1234567",
+                "",
+                None,
+            ],
+        }
+    )
+    resultado = detectar_duplicados_por_telefono(tabla, "telefono")
+
+    assert resultado.loc[0, "grupo_id"] == "tel-3001234567"
+    assert resultado.loc[1, "grupo_id"] == "tel-3001234567"
+    assert resultado.loc[2, "grupo_id"] == ""
+    assert resultado.loc[3, "grupo_id"] == ""
+
+    reales = resultado.loc[resultado["grupo_id"] == "tel-3001234567"]
+    assert reales["es_duplicado"].tolist() == [False, True]
+    vacios = resultado.loc[resultado["grupo_id"] == ""]
+    assert all(not v for v in vacios["es_duplicado"].tolist())
+
+
 # --- Guardas de la API -------------------------------------------------
 
 
