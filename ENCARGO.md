@@ -136,7 +136,7 @@ recuperar lo que se tiró.
   descarta; (3) la clasificación **no distingue** mayúsculas, tildes ni espacios
   sobrantes.
 
-- ⬜ **DC.3 — El teléfono, normalizado.**
+- ✅ **DC.3 — El teléfono, normalizado.**
   Un mismo número llega como `3001234567`, `300 123 4567`, `+57 300 1234567`,
   `(300)123-4567`. Todos son el mismo contacto.
   *Cierre:* (1) las cuatro formas de arriba producen **el mismo** valor
