@@ -165,7 +165,7 @@ recuperar lo que se tiró.
   mayúscula; (3) una sigla que ya venía en mayúsculas (`SAS`, `LTDA`) se
   conserva en mayúsculas.
 
-- ⬜ **DC.7 — El cargo pegado al nombre, separado.**
+- ✅ **DC.7 — El cargo pegado al nombre, separado.**
   En estas listas es normal encontrar `MARIA GOMEZ - GERENTE` o
   `Pedro Ruiz (Contador)` en la misma celda. **Aquí es donde entra el LLM**,
   porque ninguna regla acierta con todos los formatos.
