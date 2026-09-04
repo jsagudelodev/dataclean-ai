@@ -20,6 +20,12 @@ from dataclean.nombre import (
     normalizar_columna_nombre,
     normalizar_nombre,
 )
+from dataclean.reporte import (
+    Cifra,
+    GrupoDuplicados,
+    Reporte,
+    generar_reporte,
+)
 from dataclean.telefono import (
     TIPO_FIJO,
     TIPO_INVALIDO,
@@ -51,4 +57,8 @@ __all__ = [
     "SeparadorFalso",
     "SeparadorPorPrefijo",
     "detectar_duplicados_por_telefono",
+    "generar_reporte",
+    "Cifra",
+    "GrupoDuplicados",
+    "Reporte",
 ]
