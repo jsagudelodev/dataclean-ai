@@ -113,7 +113,7 @@ recuperar lo que se tiró.
 > **14 ítems, de `DC.0` a `DC.13`.** Cada uno pide **una** cosa. Lo que no está
 > en la línea `Cierre:` no se hace.
 
-- ⬜ **DC.0 — Levantar el proyecto.**
+- ✅ **DC.0 — Levantar el proyecto.**
   Estructura del paquete, dependencias declaradas y la suite corriendo en vacío.
   *Cierre:* (1) `python -m pytest -q` corre y pasa desde un clon limpio;
   (2) existe un `pyproject.toml` con las dependencias fijadas;
