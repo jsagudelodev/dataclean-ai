@@ -175,7 +175,7 @@ recuperar lo que se tiró.
   disponible, el sistema **sigue funcionando** y deja el campo sin separar en vez
   de fallar.
 
-- ⬜ **DC.8 — Duplicados por teléfono.**
+- ✅ **DC.8 — Duplicados por teléfono.**
   *Cierre:* (1) dos filas con el mismo teléfono en formatos distintos se
   detectan como duplicadas (esto solo funciona si DC.3 normalizó antes);
   (2) **no se borra ninguna**: se agrupan y se dice cuál se propone conservar y
