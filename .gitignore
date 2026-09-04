@@ -8,3 +8,8 @@ dist/
 build/
 configuracion.toml
 .env
+.argos/
+grafo.db
+grafo.db-shm
+grafo.db-wal
+pip.log

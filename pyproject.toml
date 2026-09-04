@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dataclean"
+version = "0.1.0"
+description = "DataClean AI — limpieza y reporte de listas de contactos."
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.1,<3",
+    "openpyxl>=3.1,<4",
+    "fastapi>=0.110,<1",
+    "uvicorn>=0.27,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
