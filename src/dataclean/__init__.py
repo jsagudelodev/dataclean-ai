@@ -12,6 +12,7 @@ from dataclean.correo import (
     validar_columna_correo,
     validar_correo,
 )
+from dataclean.duplicados import detectar_duplicados_por_telefono
 from dataclean.nombre import (
     normalizar_columna_nombre,
     normalizar_nombre,
@@ -46,4 +47,5 @@ __all__ = [
     "SeparadorNombreCargo",
     "SeparadorFalso",
     "SeparadorPorPrefijo",
+    "detectar_duplicados_por_telefono",
 ]
