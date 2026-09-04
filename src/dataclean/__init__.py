@@ -6,6 +6,10 @@ from dataclean.correo import (
     validar_columna_correo,
     validar_correo,
 )
+from dataclean.nombre import (
+    normalizar_columna_nombre,
+    normalizar_nombre,
+)
 from dataclean.telefono import (
     TIPO_FIJO,
     TIPO_INVALIDO,
