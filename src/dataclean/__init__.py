@@ -17,6 +17,11 @@ from dataclean.duplicados import (
     detectar_duplicados_por_telefono,
 )
 from dataclean.exportar import ErrorDeExportacion, exportar_tabla
+from dataclean.log_seguro import (
+    FiltroSeguro,
+    configurar_log_seguro,
+    procesar_archivo,
+)
 from dataclean.nombre import (
     normalizar_columna_nombre,
     normalizar_nombre,
@@ -60,6 +65,9 @@ __all__ = [
     "detectar_duplicados_por_telefono",
     "exportar_tabla",
     "ErrorDeExportacion",
+    "FiltroSeguro",
+    "configurar_log_seguro",
+    "procesar_archivo",
     "generar_reporte",
     "Cifra",
     "GrupoDuplicados",
