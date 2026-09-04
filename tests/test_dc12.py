@@ -8,37 +8,18 @@ Dos contratos del item:
   2) **Cierre 2** -- el dato tiene que LLEGAR al camino que escribe
      el log. Si el montaje no lo hace entrar, el test no vale.
 
-Ademas:
-  * **Regla 6** -- al menos un test tiene que fallar sin el codigo
-    nuevo (sin el filtro o sin el pipeline). Esto se demuestra en
-    el test ``test_sin_filtro_el_dato_si_llega_al_log``: si el
-    filtro se desactiva, los datos aparecen; ergo el dato SÍ llega
-    al codigo del log.
-  * **Regla 9** -- el test afirma explicitamente que ni la
-    credencial ni los valores de las columnas ``nombre``,
-    ``telefono`` y ``correo`` aparecen en ``buffer.getvalue()``.
+REGLA 6 FUERTE (lo que el aviso del revisor exige):
+    En este archivo NO se importan ``dataclean`` ni
+    ``dataclean.log_seguro`` en el header. Los imports se hacen
+    DENTRO de cada test, con ``importlib.import_module``. Asi:
 
-Como se monta el "el dato llega al camino" (Cierre 2):
-    ``procesar_archivo`` (en ``log_seguro.py``) es la unica funcion
-    del paquete que registra mensajes con el contenido real de las
-    celdas en claro. Si quitamos el filtro (``logger.removeFilter``),
-    los datos se ven en el buffer. Si dejamos el filtro, no. La
-    diferencia entre "filtro presente" y "filtro ausente" es lo que
-    demuestra que el dato llego al codigo del log y que el filtro
-    hizo su trabajo.
-
-Justificacion del diseno:
-    El test del Cierre 2 hace dos cosas en un solo flujo:
-      a) Llama a ``procesar_archivo`` SIN filtro (desactivandolo
-         justo antes del loggeo) y comprueba que la cadena del dato
-         aparece.
-      b) Llama a ``procesar_archivo`` CON filtro y comprueba que la
-         cadena del dato NO aparece.
-
-    Asi el test no depende de "yo se que el filtro funciona por
-    dentro"; depende de "yo veo que el dato llega al log cuando no
-    hay filtro y que NO llega cuando hay filtro". Eso es el Cierre
-    2 del item.
+      * Si ``log_seguro.py`` NO existe, los tests se RECOLECTAN
+        y se EJECUTAN: cada uno cae con ``ImportError`` dentro
+        del test. pytest cuenta cada uno como "1 failed" (no
+        como error de collection y no como passed).
+      * Si el modulo existe pero alguien sustituye ``FiltroSeguro``
+        por un pass-through, los asserts sobre el buffer caen
+        con ``AssertionError`` y pytest los cuenta como failed.
 """
 
 from __future__ import annotations
@@ -46,47 +27,38 @@ from __future__ import annotations
 import importlib
 import io
 import logging
-import os
 from pathlib import Path
 
-import pandas as pd
 import pytest
 
-from dataclean import FiltroSeguro, configurar_log_seguro, procesar_archivo
-# Importamos el modulo fuente directamente: si alguien borrara
-# ``log_seguro.py`` pero dejara el reexport de pega en
-# ``__init__.py``, los tests de comportamiento caen con
-# ``ImportError`` desde el modulo, no con un falso verde.
-from dataclean import log_seguro as log_seguro_modulo
 
+# --- Datos de prueba (constantes del modulo, no imports) ----------------
 
-# --- Datos de prueba ----------------------------------------------------
-
-# Una credencial que NO es un dato de contacto, pero que la regla 9
-# tambien obliga a no mostrar en claro. La cadena es unica para que
-# no choque accidentalmente con un nombre real.
 CREDENCIAL: str = "clave-super-secreta-abc-2024"
-
-# Datos de contacto del archivo de prueba. Tres filas, una por
-# categoria: nombre, telefono, correo. Cada uno aparece en su
-# columna y como ``etiqueta=valor`` en el log si el filtro falla.
 NOMBRE: str = "Juan Perez"
 TELEFONO: str = "3001234567"
 CORREO: str = "juan@correo.com"
 
 
 def _escribir_csv_de_prueba(tmp_path: Path) -> Path:
-    """Escribe un CSV con nombre, telefono, correo y la credencial
-    visible en una columna extra (simula un campo de configuracion
-    del cliente que se loggea al procesar)."""
+    """Escribe un CSV con nombre, telefono, correo y la credencial."""
     ruta = tmp_path / "contactos.csv"
-    contenido = (
+    ruta.write_text(
         "nombre,telefono,correo,api_key\n"
         f"{NOMBRE},{TELEFONO},{CORREO},{CREDENCIAL}\n"
-        "Ana Lopez,3112223333,ana@x.com,clave-api-2\n"
+        "Ana Lopez,3112223333,ana@x.com,clave-api-2\n",
+        encoding="utf-8",
     )
-    ruta.write_text(contenido, encoding="utf-8")
     return ruta
+
+
+def _importar_log_seguro():
+    """Importa el modulo ``dataclean.log_seguro`` por su nombre.
+
+    Helper usado por TODOS los tests del archivo. Si el modulo no
+    existe, lanza ``ImportError`` que pytest reporta como failed.
+    """
+    return importlib.import_module("dataclean.log_seguro")
 
 
 # --- Cierre 1: nada de dato de contacto ni credencial en el log ---------
@@ -95,43 +67,10 @@ def _escribir_csv_de_prueba(tmp_path: Path) -> Path:
 def test_ni_credencial_ni_contacto_en_el_log(tmp_path: Path) -> None:
     """Cierre 1: tras procesar el archivo, el log no contiene
     ningun dato de contacto ni la credencial."""
+    mod = _importar_log_seguro()
+    procesar_archivo = getattr(mod, "procesar_archivo")
+
     ruta = _escribir_csv_de_prueba(tmp_path)
-
-    logger, buffer = procesar_archivo(
-        ruta=str(ruta),
-        columna_telefono="telefono",
-        columna_correo="correo",
-        columna_nombre="nombre",
-        credencial=CREDENCIAL,
-    )
-
-    contenido_log = buffer.getvalue()
-
-    # La credencial NO puede aparecer.
-    assert CREDENCIAL not in contenido_log, (
-        f"la credencial aparece en el log:\n{contenido_log}"
-    )
-    # Ningun dato de contacto.
-    assert NOMBRE not in contenido_log, (
-        f"el nombre aparece en el log:\n{contenido_log}"
-    )
-    assert TELEFONO not in contenido_log, (
-        f"el telefono aparece en el log:\n{contenido_log}"
-    )
-    assert CORREO not in contenido_log, (
-        f"el correo aparece en el log:\n{contenido_log}"
-    )
-    # La marca canonica SÍ debe aparecer (al menos una vez por cada
-    # dato que se intenta loggear). Esto cierra el Cierre 1: no es
-    # que el log este vacio, es que el dato se sustituyo.
-    assert log_seguro_modulo.MARCADOR_REDACTADO in contenido_log
-
-
-def test_credencial_y_contactos_en_varias_filas(tmp_path: Path) -> None:
-    """Variante con dos filas: confirma que el filtro se aplica a
-    TODAS las filas, no solo a la primera."""
-    ruta = _escribir_csv_de_prueba(tmp_path)
-
     logger, buffer = procesar_archivo(
         ruta=str(ruta),
         columna_telefono="telefono",
@@ -141,12 +80,34 @@ def test_credencial_y_contactos_en_varias_filas(tmp_path: Path) -> None:
     )
 
     contenido = buffer.getvalue()
-    # La segunda fila tiene su propio telefono y nombre: tampoco
-    # pueden aparecer.
+    assert CREDENCIAL not in contenido, (
+        f"la credencial aparece en el log:\n{contenido}"
+    )
+    assert NOMBRE not in contenido, f"el nombre aparece:\n{contenido}"
+    assert TELEFONO not in contenido, f"el telefono aparece:\n{contenido}"
+    assert CORREO not in contenido, f"el correo aparece:\n{contenido}"
+    # La marca canonica SI debe aparecer (el dato se sustituyo).
+    assert mod.MARCADOR_REDACTADO in contenido
+
+
+def test_credencial_y_contactos_en_varias_filas(tmp_path: Path) -> None:
+    """Variante con dos filas: el filtro se aplica a TODAS las
+    filas, no solo a la primera."""
+    mod = _importar_log_seguro()
+    procesar_archivo = getattr(mod, "procesar_archivo")
+
+    ruta = _escribir_csv_de_prueba(tmp_path)
+    logger, buffer = procesar_archivo(
+        ruta=str(ruta),
+        columna_telefono="telefono",
+        columna_correo="correo",
+        columna_nombre="nombre",
+        credencial=CREDENCIAL,
+    )
+    contenido = buffer.getvalue()
     assert "3112223333" not in contenido
     assert "Ana Lopez" not in contenido
     assert "ana@x.com" not in contenido
-    # La segunda credencial tampoco.
     assert "clave-api-2" not in contenido
 
 
@@ -156,11 +117,11 @@ def test_credencial_y_contactos_en_varias_filas(tmp_path: Path) -> None:
 def test_sin_filtro_el_dato_si_llega_al_log(tmp_path: Path) -> None:
     """Cierre 2: si desactivamos el filtro, los datos aparecen en
     el log. Esto demuestra que el dato esta entrando al codigo del
-    log y que el filtro es el que los oculta (no que el log este
-    vacio por otra razon)."""
-    ruta = _escribir_csv_de_prueba(tmp_path)
+    log y que el filtro es el que los oculta."""
+    mod = _importar_log_seguro()
+    procesar_archivo = getattr(mod, "procesar_archivo")
 
-    # Llamamos al pipeline tal cual: este monta el filtro.
+    ruta = _escribir_csv_de_prueba(tmp_path)
     logger, buffer = procesar_archivo(
         ruta=str(ruta),
         columna_telefono="telefono",
@@ -170,26 +131,18 @@ def test_sin_filtro_el_dato_si_llega_al_log(tmp_path: Path) -> None:
     )
 
     # Antes de quitar el filtro, verificamos que el pipeline YA
-    # emitio la credencial (con filtro, asi que redactada). Esto
-    # demuestra que la credencial ENTRA al codigo del log: el
-    # filtro la sustituye por [REDACTADO], pero la cadena original
-    # paso por ahi.
+    # emitio la credencial (con filtro, redactada). Esto demuestra
+    # que la credencial ENTRA al codigo del log: el filtro la
+    # sustituye, pero la cadena original paso por ahi.
     contenido_con_filtro = buffer.getvalue()
-    assert CREDENCIAL not in contenido_con_filtro, (
-        "con filtro, la credencial NO debe estar en claro"
-    )
-    # La marca [REDACTADO] debe aparecer al menos una vez: el
-    # dato llego y fue sustituido.
-    assert log_seguro_modulo.MARCADOR_REDACTADO in contenido_con_filtro
+    assert CREDENCIAL not in contenido_con_filtro
+    assert mod.MARCADOR_REDACTADO in contenido_con_filtro
 
-    # Ahora desactivamos el filtro y emitimos un mensaje "de prueba"
-    # con el telefono real: si el filtro estuviera, este mensaje
-    # saldria redactado; sin filtro, el telefono aparece tal cual.
-    # Asi demostramos que el FILTRO es el responsable, no el
-    # pipeline (consistente con Cierre 2: el dato llega, lo que
-    # cambia es quien lo oculta).
-    filtros = list(logger.filters)
-    for f in filtros:
+    # Quitamos el filtro y emitimos mensajes adicionales: ahora el
+    # dato aparece en claro. La diferencia entre "filtro presente"
+    # y "filtro ausente" demuestra que el dato LLEGO al codigo del
+    # log y que el filtro es quien lo oculta.
+    for f in list(logger.filters):
         logger.removeFilter(f)
 
     logger.info("comprobacion telefono=%s", TELEFONO)
@@ -198,29 +151,22 @@ def test_sin_filtro_el_dato_si_llega_al_log(tmp_path: Path) -> None:
     logger.info("comprobacion credencial=%s", CREDENCIAL)
 
     contenido = buffer.getvalue()
-    # Sin filtro, los datos SÍ estan en el log.
-    assert TELEFONO in contenido, (
-        f"sin filtro, el telefono deberia estar en el log:\n{contenido}"
-    )
-    assert CORREO in contenido, (
-        f"sin filtro, el correo deberia estar en el log:\n{contenido}"
-    )
-    assert NOMBRE in contenido, (
-        f"sin filtro, el nombre deberia estar en el log:\n{contenido}"
-    )
-    assert CREDENCIAL in contenido, (
-        f"sin filtro, la credencial deberia estar en el log:\n{contenido}"
-    )
+    assert TELEFONO in contenido
+    assert CORREO in contenido
+    assert NOMBRE in contenido
+    assert CREDENCIAL in contenido
 
 
 def test_con_filtro_el_dato_se_redacta_en_msg_y_args() -> None:
-    """Comprueba que el filtro, aplicado a un ``LogRecord`` con el
-    dato en ``msg`` Y en ``args``, redacta ambos."""
-    logger, buffer = configurar_log_seguro(
+    """El filtro, aplicado a un ``LogRecord`` con el dato en ``msg``
+    Y en ``args``, redacta ambos."""
+    mod = _importar_log_seguro()
+    configurar = getattr(mod, "configurar_log_seguro")
+
+    logger, buffer = configurar(
         credencial=CREDENCIAL,
         valores_sensibles=[NOMBRE, TELEFONO, CORREO],
     )
-
     logger.info("procesando telefono=%s correo=%s", TELEFONO, CORREO)
     logger.info("nombre=%s con clave=%s", NOMBRE, CREDENCIAL)
 
@@ -229,27 +175,78 @@ def test_con_filtro_el_dato_se_redacta_en_msg_y_args() -> None:
     assert CORREO not in contenido
     assert NOMBRE not in contenido
     assert CREDENCIAL not in contenido
-    # Y la marca canonica aparece al menos una vez por dato.
-    assert contenido.count(
-        log_seguro_modulo.MARCADOR_REDACTADO
-    ) >= 4
+    assert contenido.count(mod.MARCADOR_REDACTADO) >= 4
 
 
-# --- Regla 6: un test que falla sin el codigo nuevo ---------------------
+# --- Regla 6 fuerte: tests que NO dependen del reexport de __init__ ----
 
 
-def test_sin_filtro_seguro_pipeline_no_redacta(tmp_path: Path) -> None:
-    """Si alguien sustituye ``FiltroSeguro`` por un filtro que no
-    redacta (o lo monta mal), el test cae. Esto cumple Regla 6: el
-    test falla sin el codigo que redacta.
+def test_regla6_fuerte_filtro_redacta_credencial_en_msg() -> None:
+    """Regla 6 fuerte (1/3): el filtro redacta la credencial
+    dentro de ``record.msg`` cuando se emite un log que la
+    contiene. El assert se hace sobre el comportamiento (el
+    contenido del buffer), no sobre la firma de la clase."""
+    mod = _importar_log_seguro()
+    configurar = getattr(mod, "configurar_log_seguro")
 
-    Como se demuestra: creamos un logger con un filtro
-    ``pass-through`` (que NO redacta) y le pasamos el mismo dato
-    que ``procesar_archivo`` emitiria. Si el filtro pasara tal
-    cual, el dato esta en el log; el assert falla. Asi, un
-    FiltroSeguro correcto es **necesario** para que el test pase.
-    """
-    logger = logging.getLogger("dataclean.test_sin_filtro")
+    logger, buffer = configurar(
+        credencial="credencial-X-12345",
+        valores_sensibles=(),
+    )
+    logger.info("probando credencial=credencial-X-12345")
+    contenido = buffer.getvalue()
+
+    # Comportamiento: la credencial NO debe estar en el log.
+    assert "credencial-X-12345" not in contenido, (
+        f"la credencial aparece en claro:\n{contenido}"
+    )
+    # Y debe aparecer la marca canonica.
+    assert mod.MARCADOR_REDACTADO in contenido
+
+
+def test_regla6_fuerte_filtro_redacta_sensibles_en_args() -> None:
+    """Regla 6 fuerte (2/3): el filtro redacta los sensibles que
+    llegan como ``args`` (formateo %s) al ``LogRecord``. Esto
+    cubre el caso real de ``logger.info("dato=%s", valor)``."""
+    mod = _importar_log_seguro()
+    configurar = getattr(mod, "configurar_log_seguro")
+
+    logger, buffer = configurar(
+        credencial=None,
+        valores_sensibles=["tel-555-1234", "ana@x.com"],
+    )
+    logger.info(
+        "fila 0 telefono=%s correo=%s", "tel-555-1234", "ana@x.com"
+    )
+    contenido = buffer.getvalue()
+
+    assert "tel-555-1234" not in contenido
+    assert "ana@x.com" not in contenido
+    assert contenido.count(mod.MARCADOR_REDACTADO) >= 2
+
+
+def test_regla6_fuerte_filtro_no_es_passthrough() -> None:
+    """Regla 6 fuerte (3/3): si el filtro fuera un pass-through
+    (no redactara), este test caeria. Lo demostramos en el mismo
+    test: primero emitimos con un FiltroNeutro y comprobamos que
+    el dato esta en claro; luego emitimos con FiltroSeguro y
+    comprobamos que se redacta. La diferencia prueba que el
+    filtro del paquete hace trabajo real, no que es cosmetico."""
+    mod = _importar_log_seguro()
+    FiltroSeguroCls = getattr(mod, "FiltroSeguro")
+    configurar = getattr(mod, "configurar_log_seguro")
+
+    class FiltroNeutroCls(logging.Filter):
+        def __init__(self, credencial=None, sensibles=()):
+            super().__init__()
+            self._credencial = credencial
+            self._sensibles = tuple(sensibles)
+
+        def filter(self, record):  # noqa: D401 - pass-through explicito
+            return True
+
+    # Fase 1: filtro neutro, el dato DEBE estar en claro.
+    logger = logging.getLogger("dataclean.test_regla6_fuerte_passthrough")
     logger.setLevel(logging.INFO)
     logger.propagate = False
     for h in list(logger.handlers):
@@ -260,54 +257,36 @@ def test_sin_filtro_seguro_pipeline_no_redacta(tmp_path: Path) -> None:
         logging.Formatter("%(levelname)s %(name)s %(message)s")
     )
     logger.addHandler(handler)
-
-    class FiltroQueNoRedacta(logging.Filter):
-        def filter(self, record):  # noqa: D401 -- pass-through
-            return True
-
-    logger.addFilter(FiltroQueNoRedacta())
-    logger.info("telefono=%s correo=%s", TELEFONO, CORREO)
-
-    contenido = buffer.getvalue()
-    # Con un filtro pass-through, el dato esta en claro. Esto es
-    # exactamente lo que NO queremos: con ``FiltroSeguro`` el dato
-    # se redacta. La comparacion es la prueba de Regla 6.
-    assert TELEFONO in contenido, (
-        "este test verifica que un filtro que NO redacta deja el "
-        "dato en el log; el assert debe caer si FiltroSeguro se "
-        "hubiera activado por error."
-    )
-
-    # Y ahora demostramos que FiltroSeguro SI redacta, sobre el
-    # mismo logger y el mismo dato:
     logger.addFilter(
-        FiltroSeguro(
-            credencial=CREDENCIAL,
-            sensibles=(NOMBRE, TELEFONO, CORREO),
-        )
+        FiltroNeutroCls(credencial="cred-1", sensibles=("dato-1",))
     )
-    logger.info("telefono=%s correo=%s", TELEFONO, CORREO)
-    contenido2 = buffer.getvalue()
-    # La primera emision (sin filtro real) dejo el dato en claro;
-    # la segunda (con FiltroSeguro) lo redacto. Asi, en el MISMO
-    # buffer, parte del log tiene el dato y parte no. Esto es la
-    # demostracion empirica de que el dato llego al log y de que
-    # FiltroSeguro es lo que lo oculta.
-    assert TELEFONO in contenido2  # por la primera emision
-    # Y la parte redactada usa la marca canonica.
-    assert log_seguro_modulo.MARCADOR_REDACTADO in contenido2
+    logger.info("con neutro dato=dato-1")
+    contenido_neutro = buffer.getvalue()
+    assert "dato-1" in contenido_neutro, (
+        "con filtro neutro, el dato DEBE estar en claro; si no, "
+        "el experimento no demuestra nada."
+    )
+
+    # Fase 2: anadimos FiltroSeguro encima y emitimos OTRO mensaje.
+    logger.addFilter(
+        FiltroSeguroCls(credencial="cred-1", sensibles=("dato-1",))
+    )
+    logger.info("con seguro dato=dato-1")
+    contenido_total = buffer.getvalue()
+
+    # El primer mensaje (filtro neutro) dejo "dato-1" en claro.
+    assert "dato-1" in contenido_total
+    # El segundo (FiltroSeguro) lo redacto: aparece [REDACTADO].
+    assert mod.MARCADOR_REDACTADO in contenido_total
 
 
-def test_procesar_archivo_es_la_unica_puerta_al_log(tmp_path: Path) -> None:
-    """Regla 6, segunda cara: si ``procesar_archivo`` dejara de
-    loggear el contenido de las celdas (por ejemplo, porque alguien
-    lo "optimiza" y elimina el bucle fila a fila), el test del
-    Cierre 2 dejaria de tener sentido -- y este test lo detecta.
+def test_procesar_archivo_emite_etiquetas_de_fila(tmp_path: Path) -> None:
+    """Verifica que ``procesar_archivo`` SI emite el mensaje
+    ``fila N: nombre= telefono= correo=`` con el formato
+    esperado. Si alguien quitara el bucle, este test caeria."""
+    mod = _importar_log_seguro()
+    procesar_archivo = getattr(mod, "procesar_archivo")
 
-    Comprobamos que, SIN filtro, ``procesar_archivo`` SI emite el
-    contenido de la celda en el log. Si esto falla, el dato ha
-    dejado de llegar al log: el test del Cierre 1 no probaria nada.
-    """
     ruta = _escribir_csv_de_prueba(tmp_path)
     logger, buffer = procesar_archivo(
         ruta=str(ruta),
@@ -316,18 +295,8 @@ def test_procesar_archivo_es_la_unica_puerta_al_log(tmp_path: Path) -> None:
         columna_nombre="nombre",
         credencial=CREDENCIAL,
     )
-    # Quitamos los filtros que el propio pipeline instala.
-    for f in list(logger.filters):
-        logger.removeFilter(f)
-    # Reemitimos un mensaje con el dato: el dato esta en el buffer
-    # (gracias a la primera emision con filtro que ya esta en el
-    # buffer, solo que redactado). Para verificar que el dato
-    # original paso por el codigo del log, comprobamos que el
-    # mensaje de "fila 0" se emitio con el formato "fila N: ..."
-    # aunque este redactado.
     contenido = buffer.getvalue()
     assert "fila 0:" in contenido
-    # Y que se mencionan las etiquetas que el pipeline construye.
     assert "nombre=" in contenido
     assert "telefono=" in contenido
     assert "correo=" in contenido
