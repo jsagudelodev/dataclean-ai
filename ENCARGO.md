@@ -151,7 +151,7 @@ recuperar lo que se tiró.
   válido puede quedar clasificado como inválido — hay un test con al menos 20
   móviles reales de formatos distintos y **cero falsos positivos**.
 
-- ⬜ **DC.5 — El correo, revisado sin inventar.**
+- ✅ **DC.5 — El correo, revisado sin inventar.**
   *Cierre:* (1) detecta un correo sin `@`, uno con espacios y uno con dominio
   incompleto; (2) un correo **raro pero válido** (`nombre+etiqueta@dominio.com.co`)
   **no** se marca como inválido; (3) lo que se marca lleva **el motivo**, no solo
