@@ -189,7 +189,7 @@ recuperar lo que se tiró.
   duplicados por nombre se marca como **sospechoso**, no como confirmado — ante
   la duda, conservar.
 
-- ⬜ **DC.10 — El reporte, que es lo que se vende.**
+- ✅ **DC.10 — El reporte, que es lo que se vende.**
   *Cierre:* (1) sobre un archivo de prueba, el reporte dice cuántos registros
   entraron, cuántos teléfonos se normalizaron, cuántos son móvil / fijo /
   inválido, cuántos correos se marcaron y cuántos grupos de duplicados hay;
