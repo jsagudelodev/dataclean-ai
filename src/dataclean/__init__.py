@@ -16,7 +16,6 @@ from dataclean.duplicados import (
     detectar_duplicados_por_nombre,
     detectar_duplicados_por_telefono,
 )
-from dataclean.exportar import ErrorDeExportacion, exportar_tabla
 from dataclean.nombre import (
     normalizar_columna_nombre,
     normalizar_nombre,
@@ -58,8 +57,6 @@ __all__ = [
     "SeparadorFalso",
     "SeparadorPorPrefijo",
     "detectar_duplicados_por_telefono",
-    "exportar_tabla",
-    "ErrorDeExportacion",
     "generar_reporte",
     "Cifra",
     "GrupoDuplicados",
