@@ -197,7 +197,7 @@ recuperar lo que se tiró.
   filas que la componen; (3) el reporte **no inventa**: si un dato no se pudo
   calcular dice que no se pudo, no pone cero.
 
-- ⬜ **DC.11 — El archivo limpio, de vuelta.**
+- ✅ **DC.11 — El archivo limpio, de vuelta.**
   *Cierre:* (1) se exporta a CSV y a Excel, y al releerlos los valores coinciden
   exactamente con los del reporte; (2) **las columnas originales se conservan**
   junto a las normalizadas — el cliente tiene que poder comparar; (3) el CSV se
