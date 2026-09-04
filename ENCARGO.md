@@ -181,7 +181,7 @@ recuperar lo que se tiró.
   (2) **no se borra ninguna**: se agrupan y se dice cuál se propone conservar y
   por qué; (3) dos filas con el teléfono vacío **no** son duplicadas entre sí.
 
-- ⬜ **DC.9 — Duplicados por nombre parecido.**
+- ✅ **DC.9 — Duplicados por nombre parecido.**
   `Juan Pérez` y `JUAN PEREZ` son la misma persona; `Juan Pérez` y `Juana Pérez`
   no lo son.
   *Cierre:* (1) el primer par se agrupa y el segundo no; (2) el umbral de
