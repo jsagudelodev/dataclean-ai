@@ -56,6 +56,29 @@ def _es_xlsx_por_contenido(primeros_bytes: bytes) -> bool:
     return primeros_bytes.startswith(FIRMA_XLSX)
 
 
+def _detectar_separador(primera_linea: str) -> str:
+    """Elige el separador del CSV mirando la primera linea.
+
+    Regla: gana el que aparece mas veces (``;`` vs ``,``). Si ninguno
+    aparece, ``,`` por defecto. Asi:
+      * Un CSV con ``;`` (lo que escribe Excel en espanol y lo que
+        produce DC.11) se lee separado en columnas.
+      * Un CSV normal con ``,`` (el caso por defecto de DC.1) se
+        sigue leyendo como siempre: el helper elige ``,``.
+      * Un CSV con ambos (raro, pero posible si el cliente metio
+        comas dentro de campos) gana el mas frecuente.
+    """
+    candidatos = (";", ",", "\t", "|")
+    mejor = ","
+    mejor_conteo = primera_linea.count(",")
+    for candidato in candidatos:
+        conteo = primera_linea.count(candidato)
+        if conteo > mejor_conteo:
+            mejor = candidato
+            mejor_conteo = conteo
+    return mejor
+
+
 def _leer_csv_con_fallback(ruta: Path) -> pd.DataFrame:
     """Lee un CSV probando codificaciones en orden hasta que una funcione.
 
@@ -64,11 +87,26 @@ def _leer_csv_con_fallback(ruta: Path) -> pd.DataFrame:
     ``encoding="latin-1"`` nunca falla porque cada byte 0x00-0xFF es
     valido en latin-1, asi que esa es la red de seguridad. Entre medias
     va ``utf-8-sig`` para atrapar BOM.
+
+    El separador se detecta mirando la primera linea: si el archivo
+    tiene ``;`` y no tiene ``,``, gana el ``;``. Asi el CSV que
+    produce ``exportar_tabla`` (DC.11) -- separado por ``;`` para que
+    Excel en espanol lo abra bien -- se relee con la misma
+    estructura.
     """
+    with ruta.open("rb") as archivo:
+        bytes_crudos = archivo.read()
+
+    # Primera linea en latin-1 (siempre funciona) para detectar el
+    # separador. No usamos la decodificacion final del CSV: solo
+    # queremos contar ``;`` y ``,`` y eso es seguro en latin-1.
+    primera_linea = bytes_crudos.split(b"\n", 1)[0].decode("latin-1")
+    separador = _detectar_separador(primera_linea)
+
     ultimo_error: UnicodeDecodeError | None = None
     for codificacion in CODIFICACIONES_CSV:
         try:
-            return pd.read_csv(ruta, encoding=codificacion)
+            return pd.read_csv(ruta, encoding=codificacion, sep=separador)
         except UnicodeDecodeError as error:
             # Esta codificacion no sirve: probamos la siguiente.
             ultimo_error = error
