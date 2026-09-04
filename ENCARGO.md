@@ -203,7 +203,7 @@ recuperar lo que se tiró.
   junto a las normalizadas — el cliente tiene que poder comparar; (3) el CSV se
   abre bien en un Excel en español (separador y codificación correctos).
 
-- ⬜ **DC.12 — Ni un dato de contacto en el log.**
+- ✅ **DC.12 — Ni un dato de contacto en el log.**
   *Cierre:* (1) test que procesa un archivo con una credencial configurada y
   comprueba que **ni la credencial ni ningún dato de contacto** —nombre,
   teléfono, correo— aparece en ninguna línea del log; (2) para que el test
