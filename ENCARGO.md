@@ -127,7 +127,7 @@ recuperar lo que se tiró.
   español) se lee sin romper las tildes; (3) un archivo que no es ni CSV ni Excel
   devuelve un error **comprensible**, no una excepción.
 
-- ⬜ **DC.2 — Saber qué es cada columna.**
+- ✅ **DC.2 — Saber qué es cada columna.**
   Las columnas llegan con nombres que nadie pactó: `TELEFONO`, `Cel`, `móvil 2`,
   `Correo electrónico`, `NOMBRE COMPLETO`. Hay que decidir qué es cada una.
   *Cierre:* (1) sobre una tabla con las cinco cabeceras de arriba, identifica
