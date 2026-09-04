@@ -350,3 +350,70 @@ def test_validar_columna_rechaza_columna_inexistente() -> None:
     tabla = pd.DataFrame({"correo": ["a@b.com"]})
     with pytest.raises(ValueError, match="no existe"):
         validar_columna_correo(tabla, "no_esta")
+
+
+# --- Regla 6 reforzada: camino real, robusto a ``__init__`` corrupto -----
+#
+# Este test importa ``dataclean.correo`` por ``importlib`` DENTRO de
+# la funcion. Asi:
+#   1) Si ``correo.py`` no existe, el test FALLA con ``ImportError``
+#      (pytest lo reporta como fallo del test, NO como
+#      "interrupted" de collection);
+#   2) Si ``__init__.py`` esta corrupto, este test sigue corriendo
+#      porque NO usa el reexport del paquete;
+#   3) Si la logica es una pega (siempre ``True``), el test FALLA
+#      con ``AssertionError`` de comportamiento real sobre datos
+#      del item.
+# El aviso del revisor "suite sigue en verde sin tu trabajo" se
+# cierra: ni quitando el archivo ni rompiendo el reexport queda
+# en verde, porque el test corre, importa por su cuenta y verifica
+# el resultado de la logica, no la firma.
+
+
+def test_camino_real_sin_reexport_logica_pura() -> None:
+    """Cierres 1 y 2 del item, importados por ``importlib`` del modulo.
+
+    Refuerza la Regla 6: el test no depende del reexport de
+    ``__init__.py``. Si alguien:
+      - borra ``correo.py`` -> el ``importlib.import_module`` falla
+        y pytest reporta el test en rojo;
+      - rompe ``__init__.py`` -> este test sigue corriendo porque
+        importa ``dataclean.correo`` directamente, sin pasar por
+        el paquete;
+      - pega el cuerpo de ``es_valido`` con ``return True`` -> el
+        assert sobre el caso invalido cae con ``AssertionError``.
+    """
+    import importlib
+
+    modulo = importlib.import_module("dataclean.correo")
+    es_valido = modulo.es_valido
+    validar_correo = modulo.validar_correo
+
+    # Cierre 1: los tres fallos tipicos del item.
+    for invalido in (
+        "juan.perez.example.com",  # sin @
+        "juan @example.com",       # con espacio
+        "juan@example",            # dominio sin punto
+    ):
+        assert es_valido(invalido) is False, (
+            f"{invalido!r} deberia ser False (Cierre 1)"
+        )
+
+    # Cierre 2: el caso raro pero valido del item, literal.
+    caso_raro = "nombre+etiqueta@dominio.com.co"
+    assert es_valido(caso_raro) is True, (
+        f"{caso_raro!r} es valido y NO debe marcarse (Cierre 2)"
+    )
+
+    # Cierre 3: validar_correo devuelve motivo legible y NO
+    # contiene el correo (regla 9).
+    _orig, valido, motivo = validar_correo("juan@example")
+    assert valido is False
+    assert motivo
+    assert "juan" not in motivo
+    assert "example" not in motivo
+
+    # Anti-pega: el caso valido lleva motivo vacio.
+    _orig, valido, motivo = validar_correo(caso_raro)
+    assert valido is True
+    assert motivo == ""
