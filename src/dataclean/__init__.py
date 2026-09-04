@@ -2,6 +2,10 @@
 
 from dataclean.carga import ErrorDeCargaInesperado, cargar_tabla
 from dataclean.clasificacion import RolColumna, clasificar_columnas
+from dataclean.correo import (
+    validar_columna_correo,
+    validar_correo,
+)
 from dataclean.telefono import (
     TIPO_FIJO,
     TIPO_INVALIDO,
@@ -26,4 +30,6 @@ __all__ = [
     "TIPO_MOVIL",
     "TIPO_FIJO",
     "TIPO_INVALIDO",
+    "validar_correo",
+    "validar_columna_correo",
 ]
