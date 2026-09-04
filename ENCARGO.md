@@ -119,7 +119,7 @@ recuperar lo que se tiró.
   (2) existe un `pyproject.toml` con las dependencias fijadas;
   (3) hay un test que comprueba que el paquete `dataclean` se importa.
 
-- ⬜ **DC.1 — Cargar el archivo, sea CSV o Excel.**
+- ✅ **DC.1 — Cargar el archivo, sea CSV o Excel.**
   Una sola función recibe una ruta y devuelve una tabla, decidiendo por el
   contenido y no por la extensión.
   *Cierre:* (1) carga un `.csv` y un `.xlsx` con las mismas columnas y devuelve
