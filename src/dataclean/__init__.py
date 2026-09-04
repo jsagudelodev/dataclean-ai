@@ -1,6 +1,12 @@
 """DataClean AI — limpieza y reporte de listas de contactos."""
 
 from dataclean.carga import ErrorDeCargaInesperado, cargar_tabla
+from dataclean.cargo import (
+    SeparadorFalso,
+    SeparadorNombreCargo,
+    SeparadorPorPrefijo,
+    separar_nombre_y_cargo,
+)
 from dataclean.clasificacion import RolColumna, clasificar_columnas
 from dataclean.correo import (
     validar_columna_correo,
@@ -36,4 +42,8 @@ __all__ = [
     "TIPO_INVALIDO",
     "validar_correo",
     "validar_columna_correo",
+    "separar_nombre_y_cargo",
+    "SeparadorNombreCargo",
+    "SeparadorFalso",
+    "SeparadorPorPrefijo",
 ]
