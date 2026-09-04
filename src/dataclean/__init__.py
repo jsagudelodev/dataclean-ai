@@ -16,6 +16,13 @@ from dataclean.duplicados import (
     detectar_duplicados_por_nombre,
     detectar_duplicados_por_telefono,
 )
+from dataclean.endpoint import (
+    ErrorDeSubida,
+    ServicioLimpieza,
+    crear_app,
+    descargar_por_id,
+    procesar_subida,
+)
 from dataclean.exportar import ErrorDeExportacion, exportar_tabla
 from dataclean.log_seguro import (
     FiltroSeguro,
@@ -63,6 +70,11 @@ __all__ = [
     "SeparadorFalso",
     "SeparadorPorPrefijo",
     "detectar_duplicados_por_telefono",
+    "ServicioLimpieza",
+    "procesar_subida",
+    "descargar_por_id",
+    "crear_app",
+    "ErrorDeSubida",
     "exportar_tabla",
     "ErrorDeExportacion",
     "FiltroSeguro",
