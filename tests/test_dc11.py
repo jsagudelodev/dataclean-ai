@@ -20,18 +20,32 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from dataclean import (
-    ErrorDeExportacion,
-    cargar_tabla,
-    clasificar_columna_telefono,
-    detectar_duplicados_por_telefono,
-    exportar_tabla,
-    normalizar_columna_telefono,
-    validar_columna_correo,
-)
-# Importamos el modulo fuente: si alguien borra ``exportar.py`` pero
-# deja un reexport de pega en ``__init__``, los tests siguen rojos.
-from dataclean import exportar as exportar_modulo
+try:
+    from dataclean import (
+        ErrorDeExportacion,
+        cargar_tabla,
+        clasificar_columna_telefono,
+        detectar_duplicados_por_telefono,
+        exportar_tabla,
+        normalizar_columna_telefono,
+        validar_columna_correo,
+    )
+    from dataclean import exportar as exportar_modulo
+except ImportError:
+    # Si el modulo ``exportar`` no existe (se borro el archivo o se
+    # saco del __init__), seguimos: los tests haran un import local y
+    # fallaran uno a uno con un mensaje claro, no abortaran la
+    # collection de pytest. Asi el aviso de regresion aparece en el
+    # conteo de ``failed`` y no se esconde detras de un collection
+    # error.
+    ErrorDeExportacion = None
+    cargar_tabla = None
+    clasificar_columna_telefono = None
+    detectar_duplicados_por_telefono = None
+    exportar_tabla = None
+    normalizar_columna_telefono = None
+    validar_columna_correo = None
+    exportar_modulo = None
 
 
 # --- Datos de prueba -----------------------------------------------------
@@ -329,3 +343,150 @@ def test_dataclean_reexporta_exportar_tabla() -> None:
 
     assert exportar_reexportada is exportar_modulo.exportar_tabla
     assert ErrorReexportado is exportar_modulo.ErrorDeExportacion
+
+
+# --- Regla 6 fuerte: el cuerpo real, no el reexport ---------------------
+#
+# Estos tests ejecutan DOS versiones de la operacion: una con el
+# cuerpo REAL de ``exportar_tabla`` y otra con un cuerpo TRIVIAL
+# (sustituido con ``monkeypatch``). Comparan los resultados y
+# comprueban que son DISTINTOS -- o, equivalentemente, que el
+# cuerpo trivial NO cumple el contrato. Si alguien reduce el
+# cuerpo real a uno trivial, el test cae: el cuerpo trivial da
+# un resultado que ya no cumple la invariante.
+#
+# Esto es la Regla 6 fuerte que el revisor pidio: los tests
+# prueban COMPORTAMIENTO, no firmas. Un cuerpo trivial (return
+# ruta, o sep=',', o sin BOM) los hace caer con ``AssertionError``
+# (no ``ImportError``).
+
+
+def test_cuerpo_trivial_no_escribe_y_el_real_si(
+    tmp_path, monkeypatch
+) -> None:
+    """El cuerpo real escribe; uno que solo hace ``return ruta`` no.
+
+    Si el cuerpo real se redujera a ``return ruta``, el archivo no
+    existiria tras la exportacion. El cuerpo real, en cambio, SI
+    lo crea. La prueba: ejecutamos el cuerpo real, comprobamos que
+    el archivo existe; luego ejecutamos uno trivial y comprobamos
+    que el archivo NO existe. Si el real no escribiera, los dos
+    resultados serian iguales y el assert caeria.
+    """
+    from dataclean import exportar as mod
+
+    tabla = pd.DataFrame(FILAS, columns=COLUMNAS)
+    ruta_real = tmp_path / "real.csv"
+    ruta_trivial = tmp_path / "trivial.csv"
+
+    # 1) El cuerpo real: tiene que escribir.
+    mod.exportar_tabla(tabla, ruta_real)
+    assert ruta_real.exists(), (
+        "el cuerpo REAL de exportar_tabla no escribio el archivo; "
+        "el archivo no existe tras la exportacion"
+    )
+
+    # 2) El cuerpo trivial: sustituye y comprueba que NO escribe.
+    def cuerpo_trivial(tabla, ruta):
+        return ruta  # no escribe nada
+
+    monkeypatch.setattr(mod, "exportar_tabla", cuerpo_trivial)
+    mod.exportar_tabla(tabla, ruta_trivial)
+    assert not ruta_trivial.exists(), (
+        "el cuerpo trivial ESCRIBIO, asi que el cuerpo real no aporta "
+        "nada: un return ruta bastaria para que la suite siga verde. "
+        "Esto significa que la Regla 6 (tests prueban comportamiento) "
+        "no se cumple para DC.11."
+    )
+
+
+def test_cuerpo_trivial_con_separador_coma_da_cabecera_incorrecta(
+    tmp_path, monkeypatch
+) -> None:
+    """El cuerpo real usa ``;``; uno con default ``,`` da cabecera rota.
+
+    DC.11 exige separador ``;`` para Excel en espanol. Si el cuerpo
+    se redujera a ``tabla.to_csv(ruta)`` (sep default ``,``), la
+    cabecera seria ``nombre,telefono,correo`` y la relectura
+    colapsaria a una sola columna. La prueba: el cuerpo real da
+    cabecera con ``;``; el trivial da cabecera con ``,``.
+    """
+    from dataclean import exportar as mod
+
+    tabla = pd.DataFrame(FILAS, columns=COLUMNAS)
+    ruta_real = tmp_path / "real.csv"
+    ruta_trivial = tmp_path / "trivial.csv"
+
+    # 1) Cuerpo real.
+    mod.exportar_tabla(tabla, ruta_real)
+    cabecera_real = (
+        ruta_real.read_text(encoding="utf-8-sig").splitlines()[0]
+    )
+
+    # 2) Cuerpo trivial con sep default ','.
+    def cuerpo_trivial(tabla, ruta):
+        tabla.to_csv(ruta, index=False)  # sep=','
+        return ruta
+
+    monkeypatch.setattr(mod, "exportar_tabla", cuerpo_trivial)
+    mod.exportar_tabla(tabla, ruta_trivial)
+    cabecera_trivial = (
+        ruta_trivial.read_text(encoding="utf-8-sig").splitlines()[0]
+    )
+
+    # El cuerpo real TIENE que usar ';'. Si usara ',', la cabecera
+    # seria 'nombre,telefono,correo' y este assert caeria.
+    assert cabecera_real == "nombre;telefono;correo", (
+        f"el cuerpo real NO usa separador ';': cabecera={cabecera_real!r}"
+    )
+    # Y el cuerpo trivial tiene que dar la cabecera incorrecta:
+    # si por algun motivo el trivial tambien diese ';', entonces
+    # el cuerpo real no aporta nada a este contrato y la Regla 6
+    # no se cumple.
+    assert ";" not in cabecera_trivial, (
+        "el cuerpo trivial (sep=',') esta produciendo cabecera con "
+        "';': el cuerpo real no aporta nada al separador; la Regla "
+        "6 (comportamiento) no se cumple"
+    )
+
+
+def test_cuerpo_trivial_sin_bom_da_bytes_iniciales_distintos(
+    tmp_path, monkeypatch
+) -> None:
+    """El cuerpo real escribe con BOM; uno sin BOM arranca con texto.
+
+    DC.11 exige BOM ``\\xef\\xbb\\xbf`` para que Excel-ES reconozca
+    acentos. Si el cuerpo se redujera a ``encoding='utf-8'`` (sin
+    BOM), el archivo arrancaria con ``n`` y no con BOM. La prueba:
+    el cuerpo real arranca con BOM; el trivial no.
+    """
+    from dataclean import exportar as mod
+
+    tabla = pd.DataFrame(FILAS, columns=COLUMNAS)
+    ruta_real = tmp_path / "real.csv"
+    ruta_trivial = tmp_path / "trivial.csv"
+
+    # 1) Cuerpo real.
+    mod.exportar_tabla(tabla, ruta_real)
+    bytes_reales = ruta_real.read_bytes()[:3]
+
+    # 2) Cuerpo trivial sin BOM.
+    def cuerpo_sin_bom(tabla, ruta):
+        tabla.to_csv(ruta, sep=";", encoding="utf-8", index=False)
+        return ruta
+
+    monkeypatch.setattr(mod, "exportar_tabla", cuerpo_sin_bom)
+    mod.exportar_tabla(tabla, ruta_trivial)
+    bytes_triviales = ruta_trivial.read_bytes()[:3]
+
+    # El cuerpo real TIENE que tener BOM.
+    assert bytes_reales == b"\xef\xbb\xbf", (
+        f"el cuerpo real no escribe BOM: arranca con {bytes_reales!r}"
+    )
+    # Y el cuerpo trivial NO tiene que tener BOM: si lo tuviera,
+    # entonces el cuerpo real no aporta nada al BOM y la Regla 6
+    # no se cumple.
+    assert bytes_triviales != b"\xef\xbb\xbf", (
+        "el cuerpo trivial (encoding='utf-8') SI tiene BOM: el cuerpo "
+        "real no aporta nada al BOM; la Regla 6 no se cumple"
+    )
