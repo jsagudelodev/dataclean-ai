@@ -157,7 +157,7 @@ recuperar lo que se tiró.
   **no** se marca como inválido; (3) lo que se marca lleva **el motivo**, no solo
   la marca.
 
-- ⬜ **DC.6 — El nombre, presentable.**
+- ✅ **DC.6 — El nombre, presentable.**
   `JUAN PEREZ`, `juan perez` y `Juan  Pérez ` son la misma persona escrita de
   tres formas.
   *Cierre:* (1) las tres formas producen el mismo nombre normalizado, con las
