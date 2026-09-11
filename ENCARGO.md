@@ -216,6 +216,36 @@ recuperar lo que se tiró.
   descargar el limpio; (2) un archivo corrupto o vacío devuelve un motivo
   comprensible y **no tumba el servicio**; (3) el tamaño máximo se configura.
 
+## 6.1 Backlog V2 — para que lo usen muchos usuarios
+
+> Abierto por el evaluador el 2026-09-10: el producto pasa de banco de pruebas
+> a servicio para clientes reales, empezando por una **interfaz web que consuma
+> la API**. Levanta de V1 la exclusión de «interfaz web»; multiusuario y cobro
+> siguen fuera hasta que tengan ítem. Estos ítems los construye Claude, no
+> Argos, así que no cuentan para la medición del §7.
+
+- ✅ **DC.14 — Correcciones críticas de V1.**
+  *Cierre:* (1) un teléfono leído como número (`int64` o `3001234567.0`, lo que
+  pasa en cuanto la columna tiene una celda vacía) se normaliza y no se marca
+  inválido; (2) un archivo con duplicados por teléfono no tumba el endpoint;
+  (3) duplicados por nombre sobre 1.000 filas en menos de 3 s; (4) un CSV mal
+  formado o un Excel dañado devuelven un motivo comprensible, sin el texto
+  técnico de la librería.
+
+- ✅ **DC.15 — Endpoint listo para uso público.**
+  *Cierre:* (1) `POST /procesar` funciona por HTTP real y no expone rutas del
+  servidor; (2) el limpio se descarga en CSV y en Excel con las marcas de
+  duplicados que cuenta el reporte; (3) un id o formato inválidos no tocan el
+  disco, un cuerpo demasiado grande se rechaza por cabecera y un error
+  inesperado da un 500 legible sin datos de contacto; (4) los archivos limpios
+  se borran pasadas las horas de retención configuradas.
+
+- ✅ **DC.16 — Subir el archivo desde una página web.**
+  *Cierre:* (1) `GET /` sirve una página que solo consume la API y pinta los
+  datos del cliente sin `innerHTML`; (2) el resumen dice en una frase lo que
+  promete el §1, sin inventar cifras que no se pudieron calcular; (3) el
+  resumen no contiene ningún dato de contacto.
+
 ---
 
 ## 7. Cómo se mide esta tanda (para el evaluador, no para el agente)
