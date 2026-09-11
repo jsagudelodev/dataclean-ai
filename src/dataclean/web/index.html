@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DataClean — revisa tu lista de contactos</title>
+<style>
+  :root {
+    --fondo: #f5f6f8;
+    --panel: #ffffff;
+    --texto: #16191f;
+    --suave: #5a6372;
+    --borde: #dfe3e9;
+    --acento: #1f5fd6;
+    --acento-texto: #ffffff;
+    --bien: #1a7a3a;
+    --aviso: #9a5b00;
+    --mal: #c4262e;
+    --mal-fondo: #fdecee;
+    --radio: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fondo: #0f1116;
+      --panel: #171a22;
+      --texto: #e9ebf0;
+      --suave: #9ba4b3;
+      --borde: #2b303b;
+      --acento: #5b93ff;
+      --acento-texto: #0b1020;
+      --bien: #4cc46e;
+      --aviso: #e0a33a;
+      --mal: #ff6b6b;
+      --mal-fondo: #2e1519;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--fondo);
+    color: var(--texto);
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 40px 20px 72px; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .bajada { margin: 0; color: var(--suave); font-size: 17px; max-width: 60ch; }
+  .marca { font-weight: 700; color: var(--acento); letter-spacing: 0.02em; font-size: 14px; text-transform: uppercase; margin-bottom: 14px; }
+
+  .zona {
+    display: block;
+    margin-top: 28px;
+    border: 2px dashed var(--borde);
+    border-radius: var(--radio);
+    background: var(--panel);
+    padding: 48px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s, background-color .15s;
+  }
+  .zona:hover, .zona.encima { border-color: var(--acento); }
+  .zona:focus-visible { outline: 3px solid var(--acento); outline-offset: 3px; }
+  .zona strong { display: block; font-size: 19px; margin-bottom: 6px; }
+  .zona span { color: var(--suave); }
+  .zona input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  .nota { margin: 12px 0 0; color: var(--suave); font-size: 14px; text-align: center; }
+
+  .cargando { margin-top: 28px; display: flex; align-items: center; gap: 12px; color: var(--suave); }
+  .giro {
+    width: 20px; height: 20px; border-radius: 50%;
+    border: 3px solid var(--borde); border-top-color: var(--acento);
+    animation: girar .8s linear infinite;
+  }
+  @keyframes girar { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .giro { animation-duration: 3s; } }
+
+  .error {
+    margin-top: 20px; padding: 14px 16px; border-radius: 10px;
+    background: var(--mal-fondo); color: var(--mal); font-weight: 500;
+  }
+
+  .resumen { font-size: 21px; line-height: 1.45; margin: 32px 0 8px; font-weight: 500; max-width: 62ch; }
+  .columnas { margin: 0 0 22px; color: var(--suave); font-size: 14px; }
+  .cifras { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .cifra { background: var(--panel); border: 1px solid var(--borde); border-radius: var(--radio); padding: 16px; }
+  .numero { font-size: 30px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .etiqueta { font-weight: 600; margin-top: 2px; }
+  .ayuda { color: var(--suave); font-size: 14px; margin-top: 4px; }
+  .bien .numero { color: var(--bien); }
+  .aviso .numero { color: var(--aviso); }
+  .mal .numero { color: var(--mal); }
+  .apagada .numero { color: var(--suave); }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; color: var(--acento); font-size: 14px; }
+  .filas { font-size: 13px; color: var(--suave); font-variant-numeric: tabular-nums; margin: 6px 0 0; overflow-wrap: anywhere; }
+
+  .acciones { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+  .boton {
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid transparent; border-radius: 10px; padding: 11px 18px;
+    font: inherit; font-weight: 600; cursor: pointer; text-decoration: none;
+  }
+  .boton:focus-visible { outline: 3px solid var(--acento); outline-offset: 2px; }
+  .primario { background: var(--acento); color: var(--acento-texto); }
+  .secundario { background: var(--panel); color: var(--texto); border-color: var(--borde); }
+  .explicacion { margin-top: 14px; color: var(--suave); font-size: 14px; max-width: 70ch; }
+</style>
+</head>
+<body>
+<main>
+  <div class="marca">DataClean</div>
+  <h1>Descubre por qué te bloquean por SPAM</h1>
+  <p class="bajada">Sube tu Excel o CSV de contactos. En segundos te decimos cuántos son fijos,
+    cuántos están repetidos y cuántos números no sirven, y te devolvemos el archivo ordenado.</p>
+
+  <section id="inicio">
+    <label class="zona" id="zona" for="archivo" tabindex="0">
+      <strong>Arrastra tu archivo aquí</strong>
+      <span>o haz clic para elegirlo · .xlsx o .csv</span>
+      <input type="file" id="archivo" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+    </label>
+    <p class="nota" id="nota">No borramos ningún contacto: marcamos lo dudoso para que tú decidas.</p>
+  </section>
+
+  <div class="cargando" id="cargando" hidden>
+    <div class="giro" aria-hidden="true"></div>
+    <span>Revisando tus contactos…</span>
+  </div>
+
+  <div class="error" id="error" role="alert" hidden></div>
+
+  <section id="resultado" hidden aria-live="polite">
+    <p class="resumen" id="resumen"></p>
+    <p class="columnas" id="columnas"></p>
+    <div class="cifras" id="cifras"></div>
+    <div class="acciones">
+      <a class="boton primario" id="descargar-xlsx" href="#">Descargar Excel ordenado</a>
+      <a class="boton secundario" id="descargar-csv" href="#">Descargar CSV</a>
+      <button class="boton secundario" id="otro" type="button">Revisar otro archivo</button>
+    </div>
+    <p class="explicacion">El archivo conserva tus columnas originales y añade al lado las revisadas:
+      el número normalizado, si es móvil o fijo, por qué un dato quedó marcado y qué filas están repetidas.</p>
+  </section>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+  const zona = $("zona");
+  const entrada = $("archivo");
+  let tamanoMaximo = null;
+
+  // Las filas del reporte cuentan desde 0 sin la cabecera; en Excel la
+  // primera fila de datos es la 2.
+  const filaExcel = (indice) => indice + 2;
+
+  const TARJETAS = [
+    { clave: "total_registros", etiqueta: "Contactos", ayuda: "Filas que leímos de tu archivo." },
+    { clave: "telefonos_moviles", tono: "bien", etiqueta: "Móviles válidos",
+      ayuda: "Listos para WhatsApp y SMS.", falta: "telefono" },
+    { clave: "telefonos_fijos", tono: "aviso", etiqueta: "Fijos",
+      ayuda: "No reciben WhatsApp ni SMS: enviarles mensajes es lo que dispara el bloqueo.", falta: "telefono" },
+    { clave: "telefonos_invalidos", tono: "mal", etiqueta: "Sin número válido",
+      ayuda: "Vacíos, incompletos o con letras. Siguen en el archivo, marcados.", falta: "telefono" },
+    { clave: "repetidos_telefono", tono: "aviso", etiqueta: "Repetidos por teléfono",
+      ayuda: "El mismo número escrito de otra forma. Te proponemos cuál conservar.", falta: "telefono" },
+    { clave: "duplicados_por_nombre", tono: "aviso", etiqueta: "Mismo nombre",
+      ayuda: "Posibles duplicados: revísalos antes de borrar nada.", falta: "nombre" },
+    { clave: "correos_marcados", tono: "mal", etiqueta: "Correos con problemas",
+      ayuda: "Sin @, con espacios o con el dominio incompleto.", falta: "correo" },
+  ];
+
+  const FALTA = {
+    telefono: "No encontramos una columna de teléfono en tu archivo.",
+    correo: "No encontramos una columna de correo en tu archivo.",
+    nombre: "No encontramos una columna de nombre en tu archivo.",
+  };
+
+  function mostrar(estado) {
+    $("inicio").hidden = estado !== "inicio" && estado !== "error";
+    $("cargando").hidden = estado !== "cargando";
+    $("resultado").hidden = estado !== "resultado";
+    $("error").hidden = estado !== "error";
+  }
+
+  function mostrarError(motivo) {
+    const texto = motivo || "No pudimos revisar el archivo.";
+    $("error").textContent = texto.charAt(0).toUpperCase() + texto.slice(1);
+    mostrar("error");
+  }
+
+  function megas(bytes) {
+    return bytes >= 1048576 ? Math.round(bytes / 1048576) + " MB" : Math.round(bytes / 1024) + " KB";
+  }
+
+  function listaFilas(indices) {
+    return indices.map(filaExcel).join(", ");
+  }
+
+  function listaGrupos(grupos) {
+    return grupos.map((g) => g.filas.map(filaExcel).join(" = ")).join(" · ");
+  }
+
+  // Cada tarjeta: número, etiqueta, ayuda y, si hay filas, el detalle
+  // desplegable con los números de fila tal como se ven en Excel.
+  function datosTarjeta(tarjeta, reporte) {
+    if (tarjeta.clave === "total_registros") {
+      return { valor: reporte.total_registros, detalle: null };
+    }
+    if (tarjeta.clave === "repetidos_telefono") {
+      const grupos = reporte.grupos_duplicados.grupos;
+      if (!reporte.total_grupos_duplicados.disponible) return { valor: null };
+      const sobrantes = grupos.reduce((suma, g) => suma + g.filas.length - 1, 0);
+      return { valor: sobrantes, detalle: grupos.length ? "Filas con el mismo número: " + listaGrupos(grupos) : null };
+    }
+    if (tarjeta.clave === "duplicados_por_nombre") {
+      const cifra = reporte.duplicados_por_nombre;
+      if (!cifra.disponible) return { valor: null };
+      return { valor: cifra.valor, detalle: cifra.grupos.length ? "Filas con el mismo nombre: " + listaGrupos(cifra.grupos) : null };
+    }
+    const cifra = reporte[tarjeta.clave];
+    if (!cifra || !cifra.disponible) return { valor: null };
+    return { valor: cifra.valor, detalle: cifra.filas.length ? "Filas: " + listaFilas(cifra.filas) : null };
+  }
+
+  function crear(etiqueta, clase, texto) {
+    const nodo = document.createElement(etiqueta);
+    if (clase) nodo.className = clase;
+    if (texto !== undefined) nodo.textContent = texto;
+    return nodo;
+  }
+
+  function pintarTarjetas(reporte) {
+    const contenedor = $("cifras");
+    contenedor.replaceChildren();
+    for (const tarjeta of TARJETAS) {
+      const datos = datosTarjeta(tarjeta, reporte);
+      const disponible = datos.valor !== null && datos.valor !== undefined;
+      const caja = crear("div", "cifra " + (disponible ? (tarjeta.tono || "") : "apagada"));
+      caja.append(
+        crear("div", "numero", disponible ? String(datos.valor) : "—"),
+        crear("div", "etiqueta", tarjeta.etiqueta),
+        crear("div", "ayuda", disponible ? tarjeta.ayuda : FALTA[tarjeta.falta]),
+      );
+      if (disponible && datos.detalle && tarjeta.clave !== "total_registros") {
+        const desplegable = crear("details");
+        desplegable.append(crear("summary", null, "Ver en qué filas"), crear("p", "filas", datos.detalle));
+        caja.append(desplegable);
+      }
+      contenedor.append(caja);
+    }
+  }
+
+  function pintarColumnas(columnas) {
+    const partes = [];
+    for (const [rol, nombre] of [["teléfono", columnas.telefono], ["correo", columnas.correo], ["nombre", columnas.nombre]]) {
+      if (nombre) partes.push(rol + " → «" + nombre + "»");
+    }
+    $("columnas").textContent = partes.length
+      ? "Columnas que revisamos: " + partes.join(", ") + "."
+      : "No reconocimos columnas de teléfono, correo ni nombre en tu archivo.";
+  }
+
+  function pintarResultado(respuesta) {
+    const reporte = respuesta.reporte;
+    $("resumen").textContent = reporte.resumen;
+    pintarColumnas(reporte.columnas_detectadas);
+    pintarTarjetas(reporte);
+    const id = encodeURIComponent(respuesta.id);
+    $("descargar-xlsx").href = "descargar/" + id + "?formato=xlsx";
+    $("descargar-csv").href = "descargar/" + id + "?formato=csv";
+    mostrar("resultado");
+  }
+
+  async function motivoDeRespuesta(respuesta) {
+    try {
+      const cuerpo = await respuesta.json();
+      if (cuerpo && cuerpo.detail && cuerpo.detail.motivo) return cuerpo.detail.motivo;
+    } catch (_) { /* cuerpo no JSON: motivo genérico */ }
+    return "No pudimos revisar el archivo (error " + respuesta.status + "). Inténtalo de nuevo.";
+  }
+
+  async function subir(archivo) {
+    if (!archivo) return;
+    if (tamanoMaximo !== null && archivo.size > tamanoMaximo) {
+      mostrarError("El archivo supera el tamaño máximo permitido (" + megas(tamanoMaximo) + ").");
+      return;
+    }
+    mostrar("cargando");
+    const datos = new FormData();
+    datos.append("archivo", archivo);
+    let respuesta;
+    try {
+      respuesta = await fetch("procesar", { method: "POST", body: datos });
+    } catch (_) {
+      mostrarError("No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.");
+      return;
+    }
+    if (!respuesta.ok) {
+      mostrarError(await motivoDeRespuesta(respuesta));
+      return;
+    }
+    pintarResultado(await respuesta.json());
+  }
+
+  entrada.addEventListener("change", () => {
+    subir(entrada.files[0]);
+    entrada.value = "";
+  });
+  zona.addEventListener("keydown", (evento) => {
+    if (evento.key === "Enter" || evento.key === " ") {
+      evento.preventDefault();
+      entrada.click();
+    }
+  });
+  for (const tipo of ["dragenter", "dragover"]) {
+    zona.addEventListener(tipo, (evento) => { evento.preventDefault(); zona.classList.add("encima"); });
+  }
+  for (const tipo of ["dragleave", "drop"]) {
+    zona.addEventListener(tipo, () => zona.classList.remove("encima"));
+  }
+  zona.addEventListener("drop", (evento) => {
+    evento.preventDefault();
+    subir(evento.dataTransfer.files[0]);
+  });
+  $("otro").addEventListener("click", () => mostrar("inicio"));
+
+  fetch("configuracion")
+    .then((r) => (r.ok ? r.json() : null))
+    .then((config) => {
+      if (!config) return;
+      tamanoMaximo = config.tamano_maximo_bytes;
+      $("nota").textContent =
+        "Hasta " + megas(tamanoMaximo) + ". No borramos ningún contacto: marcamos lo dudoso para que tú decidas. " +
+        "Tu archivo se elimina de nuestro servidor en " + config.horas_retencion + " h.";
+    })
+    .catch(() => {});
+
+  mostrar("inicio");
+})();
+</script>
+</body>
+</html>

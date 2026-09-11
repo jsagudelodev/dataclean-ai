@@ -41,9 +41,11 @@ Diseno DC.4 (cero falsos positivos):
 
 from __future__ import annotations
 
+import numbers
 import re
 from typing import Final
 
+import numpy as np
 import pandas as pd
 
 
@@ -98,6 +100,27 @@ def _a_digitos(valor: str) -> str:
     return "".join(caracter for caracter in valor if caracter.isdigit())
 
 
+def _numero_a_texto(valor: object) -> str | None:
+    """Devuelve los digitos de un telefono que llego como numero, o ``None``.
+
+    Pandas lee una columna de telefonos como ``int64`` si esta completa y
+    como ``float64`` en cuanto tiene una sola celda vacia: ``3001234567``
+    llega entonces como ``3001234567.0``. Rechazar esos valores marcaria
+    como invalidos todos los moviles de la columna (el falso positivo que
+    el criterio de vendible prohibe). Un numero con decimales reales, un
+    ``NaN`` o un booleano no son un telefono.
+    """
+    if isinstance(valor, (bool, np.bool_)):
+        return None
+    if isinstance(valor, numbers.Integral):
+        return str(int(valor))
+    if isinstance(valor, numbers.Real):
+        flotante = float(valor)
+        if flotante.is_integer():
+            return str(int(flotante))
+    return None
+
+
 def normalizar_telefono(
     valor: object,
     codigo_pais: str = "+57",
@@ -142,18 +165,14 @@ def normalizar_telefono(
           * ``marcado`` (``bool``): ``True`` si ``normalizado`` es
             util; ``False`` si el valor quedo dudoso.
     """
-    # 1) Vacios y tipos no string: no se puede normalizar.
+    # 1) Vacios y tipos no string. Un numero entero (``int``, ``int64``
+    #    o ``3001234567.0``) se lee como sus digitos; cualquier otro tipo
+    #    no se puede normalizar.
     if valor is None:
         return None, False
     if not isinstance(valor, str):
-        try:
-            if pd.isna(valor):  # type: ignore[arg-type]
-                return None, False
-        except (TypeError, ValueError):
-            pass
-        if isinstance(valor, (int,)):
-            valor = str(valor)
-        else:
+        valor = _numero_a_texto(valor)
+        if valor is None:
             return None, False
     texto = valor.strip()
     if not texto:
@@ -279,9 +298,6 @@ def _motivo_invalido(valor: object, digitos: str | None) -> str:
     return f"longitud {len(digitos)} no encaja en movil ni fijo"
 
 
-# PEGA TEMPORAL — sustituye a clasificar_telefono real para el test
-# de Regla 6. Solo valida que la firma existe; la clasificacion es
-# trivial y siempre dice MOVIL salvo cuando el canonico es None.
 def clasificar_telefono(
     valor: object,
     codigo_pais: str = "+57",

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dataclean"
-version = "0.1.0"
+version = "0.2.0"
 description = "DataClean AI — limpieza y reporte de listas de contactos."
 requires-python = ">=3.11"
 dependencies = [
@@ -12,15 +12,24 @@ dependencies = [
     "openpyxl>=3.1,<4",
     "fastapi>=0.110,<1",
     "uvicorn>=0.27,<1",
+    "python-multipart>=0.0.9,<1",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8,<9",
+    "httpx>=0.27,<1",
 ]
+
+[project.scripts]
+dataclean = "dataclean.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+dataclean = ["web/*.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]

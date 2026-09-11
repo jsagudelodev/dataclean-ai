@@ -195,6 +195,33 @@ def _similitud(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
 
+def _grupo_parecido(
+    canon: str,
+    canon_del_grupo: dict[str, str],
+    similitud_minima: float,
+) -> str | None:
+    """Devuelve el primer grupo cuyo canonico se parece a ``canon``.
+
+    Mismo resultado que llamar a :func:`_similitud` contra cada grupo,
+    pero descarta antes con las cotas superiores baratas de
+    ``SequenceMatcher`` (``real_quick_ratio`` y ``quick_ratio``): un par
+    que no las pasa no puede pasar ``ratio``. ``canon`` va en ``seq2``
+    porque ``SequenceMatcher`` cachea el analisis de esa secuencia.
+    """
+    from difflib import SequenceMatcher
+
+    comparador = SequenceMatcher(None, "", canon)
+    for gid, otro_canon in canon_del_grupo.items():
+        comparador.set_seq1(otro_canon)
+        if (
+            comparador.real_quick_ratio() >= similitud_minima
+            and comparador.quick_ratio() >= similitud_minima
+            and comparador.ratio() >= similitud_minima
+        ):
+            return gid
+    return None
+
+
 def detectar_duplicados_por_nombre(
     tabla: pd.DataFrame,
     columna: str,
@@ -299,15 +326,18 @@ def detectar_duplicados_por_nombre(
     # necesidad de medir parecido: su canonico es identico.
     grupos: dict[str, list[int]] = {}
     canon_del_grupo: dict[str, str] = {}
+    # Indice canonico -> grupo: un canonico ya visto se resuelve en O(1).
+    # Sin el, 1.000 filas costaban ~500.000 comparaciones de
+    # ``SequenceMatcher`` (decenas de segundos) aunque el umbral fuera
+    # 1.0, donde "parecido" solo puede significar "identico".
+    grupo_de_canon: dict[str, str] = {}
     for pos, canon in enumerate(canonicos):
         if not canon:
             continue
-        # Buscar un grupo existente cuyo canonico sea parecido.
-        elegido: str | None = None
-        for gid, otro_canon in canon_del_grupo.items():
-            if _similitud(canon, otro_canon) >= similitud_minima:
-                elegido = gid
-                break
+        elegido: str | None = grupo_de_canon.get(canon)
+        if elegido is None and similitud_minima < 1.0:
+            elegido = _grupo_parecido(canon, canon_del_grupo, similitud_minima)
+        grupo_de_canon.setdefault(canon, elegido or f"nom-{canon}")
         if elegido is None:
             nuevo_gid = f"nom-{canon}"
             grupos[nuevo_gid] = [pos]

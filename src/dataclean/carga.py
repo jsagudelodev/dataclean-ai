@@ -39,6 +39,20 @@ MENSAJE_NO_CSV_NI_EXCEL: Final[str] = (
     "no se pudo decodificar como texto y tampoco tiene la firma de un "
     "libro de Excel. Comprueba que sea un .csv o un .xlsx valido."
 )
+MENSAJE_CSV_MAL_FORMADO: Final[str] = (
+    "El archivo parece un CSV, pero sus filas no tienen una estructura "
+    "de tabla coherente (por ejemplo, unas comillas sin cerrar o filas "
+    "con más columnas que la cabecera). Ábrelo en Excel, guárdalo de "
+    "nuevo como CSV y vuelve a subirlo."
+)
+MENSAJE_SIN_DATOS: Final[str] = (
+    "El archivo no tiene datos: no se encontró ninguna cabecera ni fila."
+)
+MENSAJE_EXCEL_DANADO: Final[str] = (
+    "El archivo parece un Excel, pero no se pudo abrir: puede estar "
+    "dañado o protegido con contraseña. Ábrelo en Excel, guárdalo de "
+    "nuevo como .xlsx y vuelve a subirlo."
+)
 
 
 class ErrorDeCargaInesperado(ValueError):
@@ -147,7 +161,13 @@ def cargar_tabla(ruta: str | Path) -> pd.DataFrame:
         bytes_crudos = archivo.read()
 
     if _es_xlsx_por_contenido(bytes_crudos[:4]):
-        return pd.read_excel(ruta, engine="openpyxl")
+        # Un ZIP que no es un libro de Excel valido (o uno danado) hace
+        # que openpyxl lance errores de muy distinto tipo; al cliente le
+        # llega un solo motivo legible (regla 8).
+        try:
+            return pd.read_excel(ruta, engine="openpyxl")
+        except Exception:  # noqa: BLE001
+            raise ErrorDeCargaInesperado(MENSAJE_EXCEL_DANADO) from None
 
     # Si no parece XLSX, intentamos como CSV. ``read_csv`` detecta el
     # delimitador y la cabecera por si solo; lo que si necesita es una
@@ -163,6 +183,12 @@ def cargar_tabla(ruta: str | Path) -> pd.DataFrame:
         # binario no-CSV igual producimos algo y queremos que el caller
         # sepa que no es lo que esperaba.
         raise ErrorDeCargaInesperado(MENSAJE_NO_CSV_NI_EXCEL) from None
+    except pd.errors.EmptyDataError:
+        raise ErrorDeCargaInesperado(MENSAJE_SIN_DATOS) from None
+    except pd.errors.ParserError:
+        # El texto de pandas ("Error tokenizing data. C error: ...") es
+        # un mensaje tecnico que el cliente no puede usar (regla 8).
+        raise ErrorDeCargaInesperado(MENSAJE_CSV_MAL_FORMADO) from None
 
     # Heuristica: si "se leyo" como CSV pero el contenido tiene una
     # densidad alta de bytes de control (lo que pasaria si fuera un PDF,
