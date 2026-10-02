@@ -110,7 +110,7 @@ recuperar lo que se tiró.
 
 ## 6. Backlog V1
 
-> **14 ítems, de `DC.0` a `DC.13`.** Cada uno pide **una** cosa. Lo que no está
+> **19 ítems, de `DC.0` a `DC.18`.** Cada uno pide **una** cosa. Lo que no está
 > en la línea `Cierre:` no se hace.
 
 - ✅ **DC.0 — Levantar el proyecto.**
@@ -245,6 +245,29 @@ recuperar lo que se tiró.
   datos del cliente sin `innerHTML`; (2) el resumen dice en una frase lo que
   promete el §1, sin inventar cifras que no se pudieron calcular; (3) el
   resumen no contiene ningún dato de contacto.
+
+- ✅ **DC.17 — El móvil marcado con el prefijo de salida internacional.**
+  `0057 300 1234567` —la forma en que exporta la agenda de muchos móviles— se
+  marca **inválido**, mientras que `+57` y `57` sí se reconocen. Es un falso
+  positivo contra el criterio §4: uno de cada veinte formatos, ~50 contactos
+  buenos descartados por cada 1.000.
+  *Cierre:* (1) las tres formas `0057…`, `+57…` y `57…` producen el mismo
+  valor normalizado y se clasifican como móvil; (2) no se gana inventando: un
+  número de otro país con el mismo prefijo de salida (`0034…`) se sigue
+  marcando, no se fuerza al mercado configurado; (3) ningún test de DC.3/DC.4
+  se modifica para lograrlo.
+
+- ⬜ **DC.18 — El cargo y las columnas de teléfono que el pipeline ignora.**
+  DC.7 está construida y probada pero el endpoint no la llama, así que el
+  cliente recibe `MARIA GOMEZ - GERENTE` sin separar. Y de varias columnas de
+  teléfono (`TELEFONO`, `Cel`, `móvil 2`) solo se procesa la primera: las
+  demás se pierden. **Se conecta lo que ya existe; no se construye motor
+  nuevo.**
+  *Cierre:* (1) una subida con `MARIA GOMEZ - GERENTE` devuelve nombre y cargo
+  en campos separados, y sin LLM disponible sigue respondiendo sin fallar
+  (DC.7 cierre 3); (2) una tabla con tres columnas de teléfono se normaliza y
+  clasifica en **las tres**, y las cifras del reporte las cuentan todas;
+  (3) el caso de una sola columna no cambia de comportamiento.
 
 ---
 
