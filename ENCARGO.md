@@ -110,7 +110,7 @@ recuperar lo que se tiró.
 
 ## 6. Backlog V1
 
-> **14 ítems, de `DC.0` a `DC.13`.** Cada uno pide **una** cosa. Lo que no está
+> **16 ítems, de `DC.0` a `DC.15`.** Cada uno pide **una** cosa. Lo que no está
 > en la línea `Cierre:` no se hace.
 
 - ✅ **DC.0 — Levantar el proyecto.**
@@ -215,6 +215,31 @@ recuperar lo que se tiró.
   *Cierre:* (1) `POST` con un archivo devuelve el reporte y un identificador para
   descargar el limpio; (2) un archivo corrupto o vacío devuelve un motivo
   comprensible y **no tumba el servicio**; (3) el tamaño máximo se configura.
+
+- ⬜ **DC.14 — El pipeline completo, de verdad.**
+  Las piezas DC.7 y DC.9 están construidas y probadas, pero el endpoint no las
+  llama: quien sube un archivo recibe los nombres sin separar del cargo y un
+  reporte que ignora los duplicados por nombre. Además, de varias columnas de
+  teléfono (`TELEFONO`, `Cel`, `móvil 2`) solo se procesa la primera y las
+  demás se pierden. **Se conecta lo que ya existe; no se construye motor nuevo.**
+  *Cierre:* (1) una subida por el endpoint con `MARIA GOMEZ - GERENTE` devuelve
+  el nombre y el cargo en campos separados, y con el LLM no disponible sigue
+  respondiendo sin fallar (DC.7 cierre 3); (2) el reporte de esa misma subida
+  incluye los grupos de duplicados **por nombre**, marcados como sospechosos y
+  distinguibles de los de teléfono; (3) una tabla con tres columnas de teléfono
+  se normaliza y clasifica en **las tres**, y las cifras del reporte las cuentan
+  todas.
+
+- ⬜ **DC.15 — Mil filas reales.**
+  El criterio de vendible de la sección 4 habla de «un Excel real y sucio de
+  1.000 filas», y hasta hoy nadie lo ha medido: los tests son sintéticos y por
+  ítem. Este ítem no añade funcionalidad, **mide la que hay**.
+  *Cierre:* (1) existe un test que pasa un archivo de al menos 1.000 filas por
+  el endpoint completo, de extremo a extremo, y el reporte cuadra con lo que el
+  generador del archivo sabe que metió; (2) **cero falsos positivos** a esa
+  escala: ningún móvil bueno queda clasificado como inválido; (3) el test deja
+  escrito el tiempo que tardó y falla si supera un techo **configurable** — si
+  el techo se incumple, se anota en la bitácora en vez de subirlo.
 
 ---
 
