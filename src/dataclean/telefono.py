@@ -188,6 +188,14 @@ def normalizar_telefono(
         # p.ej. ``57 300 1234567``), se lo quitamos; si no, lo
         # tratamos como nacional.
         digitos = _a_digitos(limpio)
+        # ``00`` es el prefijo de SALIDA internacional, y es como
+        # exporta la agenda de muchos moviles: ``0057 300 1234567``.
+        # Hay que quitarlo ANTES de comparar con el codigo de pais;
+        # si no, el ``0`` del paso 5 se come los ceros cuando ya es
+        # tarde y un movil bueno acaba marcado como invalido
+        # (falso positivo encontrado por DC.15).
+        if digitos.startswith("00") and len(digitos) > 2:
+            digitos = digitos[2:]
         if digitos.startswith(digitos_pais) and len(digitos) > len(digitos_pais):
             digitos = digitos[len(digitos_pais):]
 
