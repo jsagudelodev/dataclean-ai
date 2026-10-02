@@ -216,7 +216,7 @@ recuperar lo que se tiró.
   descargar el limpio; (2) un archivo corrupto o vacío devuelve un motivo
   comprensible y **no tumba el servicio**; (3) el tamaño máximo se configura.
 
-- ⬜ **DC.14 — El pipeline completo, de verdad.**
+- ✅ **DC.14 — El pipeline completo, de verdad.**
   Las piezas DC.7 y DC.9 están construidas y probadas, pero el endpoint no las
   llama: quien sube un archivo recibe los nombres sin separar del cargo y un
   reporte que ignora los duplicados por nombre. Además, de varias columnas de
