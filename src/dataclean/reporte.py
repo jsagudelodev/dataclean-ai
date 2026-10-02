@@ -77,6 +77,9 @@ _MOTIVO_SIN_COLUMNA_TELEFONO: Final[str] = (
 _MOTIVO_SIN_COLUMNA_CORREO: Final[str] = (
     "la columna de correo no esta en la tabla"
 )
+_MOTIVO_SIN_COLUMNA_NOMBRE: Final[str] = (
+    "la columna de nombre no esta en la tabla"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +134,35 @@ class GrupoDuplicados:
 
 
 @dataclass(frozen=True)
+class GrupoDuplicadosNombre:
+    """Un grupo de duplicados por nombre parecido (DC.9).
+
+    Deliberadamente **no** lleva el canonico: a diferencia del
+    telefono, el nombre canonico es un dato personal legible y el
+    reporte viaja a JSON y a los logs (regla 9). Lo que el cliente
+    necesita para decidir son las filas, si el grupo es seguro o
+    sospechoso, y cual se propone conservar.
+
+    Atributos:
+        id: identificador opaco del grupo (``nombre-1``, ...).
+        filas: indices de las filas agrupadas (Cierre 2 de DC.10).
+        sospechoso: ``True`` si los canonicos no eran identicos y
+            el grupo salio del umbral de parecido. DC.9 cierre 3
+            obliga a que estos grupos no se den por confirmados.
+        fila_conservar: indice de la fila que se propone conservar.
+        motivo_conservar: por que esa y no otra. Sin datos
+            personales (regla 9).
+    """
+
+    id: str
+    filas: tuple[int, ...]
+    sospechoso: bool
+    fila_conservar: int
+    motivo_conservar: str = ""
+    canonicos_identicos: bool = True
+
+
+@dataclass(frozen=True)
 class Reporte:
     """El reporte que el producto vende."""
 
@@ -142,6 +174,17 @@ class Reporte:
     correos_marcados: Cifra
     grupos_duplicados: tuple[GrupoDuplicados, ...]
     total_grupos_duplicados: Cifra
+    # DC.14: los duplicados por nombre (DC.9) entran al reporte.
+    # Van al final y con default para no romper a quien ya
+    # construye un Reporte posicionalmente (regla 12).
+    grupos_duplicados_nombre: tuple[GrupoDuplicadosNombre, ...] = ()
+    total_grupos_duplicados_nombre: Cifra = field(
+        default_factory=lambda: Cifra(
+            valor=None,
+            disponible=False,
+            motivo=_MOTIVO_SIN_COLUMNA_NOMBRE,
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -317,10 +360,161 @@ def _calcular_grupos(
     return tuple(grupos), total
 
 
+def _calcular_telefonos_multi(
+    tabla: pd.DataFrame,
+    columnas: list[str],
+) -> tuple[Cifra, Cifra, Cifra, Cifra]:
+    """Suma las cifras de telefono sobre **varias** columnas (DC.14).
+
+    Un contacto puede traer ``TELEFONO``, ``Cel`` y ``movil 2``. Las
+    cifras cuentan **telefonos**, no filas: una fila con tres moviles
+    aporta 3 a ``telefonos_moviles``. El rastreo (Cierre 2 de DC.10)
+    sigue siendo por fila, sin repetir indices, porque lo que el
+    cliente pide al tirar de una cifra es "ensename las filas".
+    """
+    presentes = [c for c in columnas if c in tabla.columns]
+    if not presentes:
+        motivo = _MOTIVO_SIN_COLUMNA_TELEFONO
+        return (
+            _cifra_no_disponible(motivo),
+            _cifra_no_disponible(motivo),
+            _cifra_no_disponible(motivo),
+            _cifra_no_disponible(motivo),
+        )
+
+    # Un acumulador por metrica: total de telefonos y filas tocadas.
+    totales = [0, 0, 0, 0]
+    filas: list[set[int]] = [set(), set(), set(), set()]
+    for columna in presentes:
+        cifras = _calcular_telefonos(tabla, columna)
+        for i, cifra in enumerate(cifras):
+            if not cifra.disponible or cifra.valor is None:
+                continue
+            totales[i] += cifra.valor
+            filas[i].update(cifra.filas)
+
+    return tuple(  # type: ignore[return-value]
+        Cifra(
+            valor=totales[i],
+            disponible=True,
+            motivo="",
+            filas=tuple(sorted(filas[i])),
+        )
+        for i in range(4)
+    )
+
+
+def _sin_tildes(valor: object) -> str:
+    """Pliega tildes y espacios de ``valor`` para poder compararlo.
+
+    Es solo una **clave de comparacion**: no se exporta ni se
+    reporta, porque un nombre sin tildes sigue siendo un dato
+    personal (regla 9). La version presentable del nombre la da
+    DC.6, que si las conserva.
+    """
+    import unicodedata
+
+    if valor is None:
+        return ""
+    try:
+        if bool(pd.isna(valor)):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    texto = " ".join(str(valor).split())
+    descompuesto = unicodedata.normalize("NFD", texto)
+    return "".join(
+        c for c in descompuesto if unicodedata.category(c) != "Mn"
+    )
+
+
+def _calcular_grupos_nombre(
+    tabla: pd.DataFrame,
+    columna_nombre: str | None,
+    similitud_minima: float,
+) -> tuple[tuple[GrupoDuplicadosNombre, ...], Cifra]:
+    """Lleva los duplicados por nombre (DC.9) al reporte (DC.14).
+
+    Dos decisiones que no son automaticas:
+
+      * **El id se reescribe.** ``detectar_duplicados_por_nombre``
+        genera ``nom-<canonico>``, y el canonico ES el nombre de una
+        persona. El reporte viaja a JSON y al log, asi que aqui se
+        sustituye por un id opaco y correlativo (regla 9).
+      * **Todo grupo sale sospechoso.** DC.9 cierre 3 pide que un
+        grupo por nombre se marque sospechoso y no confirmado. La
+        columna ``sospechoso`` de DC.9 tiene una semantica mas fina
+        (solo marca los grupos de canonicos distintos), que se
+        conserva aparte en ``canonicos_identicos``.
+    """
+    if columna_nombre is None or columna_nombre not in tabla.columns:
+        return (), _cifra_no_disponible(_MOTIVO_SIN_COLUMNA_NOMBRE)
+
+    from dataclean.duplicados import detectar_duplicados_por_nombre
+
+    # Se agrupa sobre una clave **sin tildes**, en una tabla
+    # auxiliar que no sale de aqui. Razon medida: el canonico de
+    # DC.6 conserva la tilde, asi que ``Juan Pérez`` y ``JUAN
+    # PEREZ`` se parecen 0.90, mientras que ``Juan Pérez`` y
+    # ``Juana Pérez`` se parecen 0.95. Por ratio no hay umbral que
+    # agrupe el primer par sin agrupar el segundo; plegando las
+    # tildes, el primer par queda identico y el segundo no.
+    tabla_auxiliar = tabla.copy()
+    clave = "_clave_nombre_dc14"
+    tabla_auxiliar[clave] = [
+        _sin_tildes(valor) for valor in tabla[columna_nombre]
+    ]
+
+    resultado = detectar_duplicados_por_nombre(
+        tabla_auxiliar, clave, similitud_minima=similitud_minima
+    )
+
+    ids = resultado["grupo_id"].tolist()
+    agrupado: dict[str, list[int]] = {}
+    for i, gid in enumerate(ids):
+        if not gid:
+            continue
+        agrupado.setdefault(gid, []).append(i)
+
+    grupos: list[GrupoDuplicadosNombre] = []
+    for gid in sorted(agrupado.keys()):
+        posiciones = agrupado[gid]
+        if len(posiciones) < 2:
+            continue
+        duplicadas = resultado["es_duplicado"].tolist()
+        conservar = next(
+            (p for p in posiciones if not duplicadas[p]), posiciones[0]
+        )
+        identicos = not bool(resultado["sospechoso"].tolist()[conservar])
+        grupos.append(
+            GrupoDuplicadosNombre(
+                id=f"nombre-{len(grupos) + 1}",
+                filas=tuple(posiciones),
+                sospechoso=True,
+                fila_conservar=conservar,
+                motivo_conservar=str(
+                    resultado["motivo_conservar"].tolist()[conservar]
+                ),
+                canonicos_identicos=identicos,
+            )
+        )
+
+    total = Cifra(
+        valor=len(grupos),
+        disponible=True,
+        motivo="",
+        filas=tuple(range(len(grupos))),
+    )
+    return tuple(grupos), total
+
+
 def generar_reporte(
     tabla: pd.DataFrame,
     columna_telefono: str | None = None,
     columna_correo: str | None = None,
+    columnas_telefono: list[str] | None = None,
+    columna_nombre: str | None = None,
+    similitud_minima: float = 1.0,
 ) -> Reporte:
     """Genera el reporte de limpieza a partir de una tabla.
 
@@ -339,12 +533,31 @@ def generar_reporte(
     """
     registros_totales = len(tabla)
 
-    telefonos_normalizados, telefonos_moviles, telefonos_fijos, telefonos_invalidos = (
-        _calcular_telefonos(tabla, columna_telefono or "")
-    )
+    # DC.14: si el caller pasa varias columnas de telefono se suman
+    # todas; si pasa una sola (o ninguna), el camino de DC.10 queda
+    # exactamente igual que antes (regla 12).
+    if columnas_telefono:
+        (
+            telefonos_normalizados,
+            telefonos_moviles,
+            telefonos_fijos,
+            telefonos_invalidos,
+        ) = _calcular_telefonos_multi(tabla, columnas_telefono)
+        if columna_telefono is None:
+            columna_telefono = columnas_telefono[0]
+    else:
+        (
+            telefonos_normalizados,
+            telefonos_moviles,
+            telefonos_fijos,
+            telefonos_invalidos,
+        ) = _calcular_telefonos(tabla, columna_telefono or "")
 
     correos_marcados = _calcular_correos(tabla, columna_correo)
     grupos, total_grupos = _calcular_grupos(tabla, columna_telefono)
+    grupos_nombre, total_grupos_nombre = _calcular_grupos_nombre(
+        tabla, columna_nombre, similitud_minima
+    )
 
     return Reporte(
         registros_totales=registros_totales,
@@ -355,4 +568,6 @@ def generar_reporte(
         correos_marcados=correos_marcados,
         grupos_duplicados=grupos,
         total_grupos_duplicados=total_grupos,
+        grupos_duplicados_nombre=grupos_nombre,
+        total_grupos_duplicados_nombre=total_grupos_nombre,
     )

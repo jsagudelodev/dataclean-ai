@@ -81,11 +81,12 @@ from __future__ import annotations
 import os
 import secrets
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
 from dataclean.carga import ErrorDeCargaInesperado, cargar_tabla
+from dataclean.cargo import separar_nombre_y_cargo
 from dataclean.clasificacion import clasificar_columnas
 from dataclean.correo import validar_columna_correo
 from dataclean.exportar import ErrorDeExportacion, exportar_tabla
@@ -138,6 +139,12 @@ class _Normalizacion:
     columna_nombre: str | None
     columna_telefono: str | None
     columna_correo: str | None
+    # DC.14: todas las columnas con rol TELEFONO, no solo la
+    # primera. ``columna_telefono`` se conserva porque los grupos
+    # de duplicados de DC.8 se calculan sobre una sola.
+    columnas_telefono: list[str] = field(default_factory=list)
+    # Columna derivada con el nombre ya sin el cargo pegado (DC.7).
+    columna_nombre_sin_cargo: str | None = None
 
 
 class ServicioLimpieza:
@@ -154,6 +161,8 @@ class ServicioLimpieza:
         self,
         carpeta_salida: str | os.PathLike[str] | None = None,
         tamano_maximo_bytes: int | None = None,
+        separador: Any | None = None,
+        similitud_minima: float = 1.0,
     ) -> None:
         if carpeta_salida is None:
             base = Path(tempfile.gettempdir()) / CARPETA_POR_DEFECTO
@@ -174,6 +183,15 @@ class ServicioLimpieza:
                 "tamano_maximo_bytes debe ser positivo"
             )
         self._tamano_maximo_bytes: int = tamano_maximo_bytes
+        # DC.14. ``separador=None`` es el caso real de "el LLM no
+        # esta disponible": DC.7 cierre 3 obliga a seguir
+        # funcionando y dejar el campo sin separar, no a fallar.
+        self._separador: Any | None = separador
+        self._similitud_minima: float = similitud_minima
+
+    @property
+    def separador(self) -> Any | None:
+        return self._separador
 
     @property
     def carpeta_salida(self) -> Path:
@@ -237,12 +255,22 @@ class ServicioLimpieza:
             columna_telefono=columna_telefono,
             columna_correo=columna_correo,
             columna_nombre=columna_nombre,
+            separador=self._separador,
         )
 
         reporte = generar_reporte(
             normalizacion.tabla,
             columna_telefono=normalizacion.columna_telefono,
             columna_correo=normalizacion.columna_correo,
+            columnas_telefono=normalizacion.columnas_telefono,
+            # Se agrupa por el nombre ya sin el cargo pegado (DC.7):
+            # con el cargo dentro, dos filas de la misma persona con
+            # cargos distintos no se reconocerian como duplicadas.
+            columna_nombre=(
+                normalizacion.columna_nombre_sin_cargo
+                or normalizacion.columna_nombre
+            ),
+            similitud_minima=self._similitud_minima,
         )
 
         self._asegurar_carpeta()
@@ -306,21 +334,37 @@ def _normalizar(
     columna_telefono: str | None,
     columna_correo: str | None,
     columna_nombre: str | None,
+    separador: Any | None = None,
 ) -> _Normalizacion:
-    """Aplica DC.2 (clasificar) + DC.3/4 (tel) + DC.5 (correo) + DC.6 (nombre)."""
+    """El pipeline completo: DC.2 + DC.3/4 + DC.5 + DC.6 + DC.7.
+
+    DC.14 corrige dos huecos de DC.13:
+
+      * se procesan **todas** las columnas con rol TELEFONO, no
+        solo la primera (``TELEFONO``, ``Cel``, ``movil 2`` suelen
+        venir juntas en el mismo Excel);
+      * el nombre pasa antes por DC.7 para despegarle el cargo, y
+        lo que se normaliza (DC.6) y se agrupa (DC.9) es el nombre
+        ya limpio, no el que arrastra ``- GERENTE`` al final.
+    """
+    from dataclean.clasificacion import RolColumna
+
+    columnas_telefono: list[str] = []
+    if columna_telefono is not None:
+        columnas_telefono = [columna_telefono]
+
     if (
-        columna_telefono is None
+        not columnas_telefono
         or columna_correo is None
         or columna_nombre is None
     ):
-        from dataclean.clasificacion import RolColumna
-
         roles = clasificar_columnas(tabla)
-        if columna_telefono is None:
-            for nombre, rol in roles.items():
-                if rol == RolColumna.TELEFONO:
-                    columna_telefono = nombre
-                    break
+        if not columnas_telefono:
+            columnas_telefono = [
+                nombre
+                for nombre, rol in roles.items()
+                if rol == RolColumna.TELEFONO
+            ]
         if columna_correo is None:
             for nombre, rol in roles.items():
                 if rol == RolColumna.CORREO:
@@ -331,19 +375,60 @@ def _normalizar(
                 if rol == RolColumna.NOMBRE:
                     columna_nombre = nombre
                     break
-    if columna_telefono and columna_telefono in tabla.columns:
-        tabla = normalizar_columna_telefono(tabla, columna_telefono)
-        tabla = clasificar_columna_telefono(tabla, columna_telefono)
+
+    columnas_telefono = [c for c in columnas_telefono if c in tabla.columns]
+    for columna in columnas_telefono:
+        tabla = normalizar_columna_telefono(tabla, columna)
+        tabla = clasificar_columna_telefono(tabla, columna)
+    # Los duplicados por telefono (DC.8) siguen calculandose sobre
+    # una sola columna: agrupar por varias a la vez es otro problema
+    # y no esta en el cierre de este item.
+    columna_telefono = columnas_telefono[0] if columnas_telefono else None
+
     if columna_correo and columna_correo in tabla.columns:
         tabla = validar_columna_correo(tabla, columna_correo)
+
+    columna_sin_cargo: str | None = None
     if columna_nombre and columna_nombre in tabla.columns:
+        tabla, columna_sin_cargo = _separar_cargo(
+            tabla, columna_nombre, separador
+        )
         tabla = normalizar_columna_nombre(tabla, columna_nombre)
+
     return _Normalizacion(
         tabla=tabla,
         columna_nombre=columna_nombre,
         columna_telefono=columna_telefono,
         columna_correo=columna_correo,
+        columnas_telefono=columnas_telefono,
+        columna_nombre_sin_cargo=columna_sin_cargo,
     )
+
+
+def _separar_cargo(
+    tabla: Any,
+    columna_nombre: str,
+    separador: Any | None,
+) -> tuple[Any, str]:
+    """Aplica DC.7 a la columna de nombre y devuelve la tabla y la nueva columna.
+
+    La columna original **se conserva intacta** (DC.11 cierre 2):
+    se anaden ``<columna>_sin_cargo`` y ``<columna>_cargo``. Si no
+    hay separador, ``separar_nombre_y_cargo`` devuelve el valor
+    entero y el cargo vacio -- el sistema sigue (DC.7 cierre 3).
+    """
+    nombres: list[Any] = []
+    cargos: list[str | None] = []
+    for valor in tabla[columna_nombre]:
+        nombre, cargo = separar_nombre_y_cargo(valor, separador=separador)
+        nombres.append(nombre)
+        cargos.append(cargo)
+
+    resultado = tabla.copy()
+    columna_sin_cargo = f"{columna_nombre}_sin_cargo"
+    resultado[columna_sin_cargo] = nombres
+    resultado[f"{columna_nombre}_cargo"] = cargos
+    return resultado, columna_sin_cargo
 
 
 def _reporte_a_dict(reporte: Any) -> dict[str, Any]:
@@ -363,16 +448,46 @@ def _reporte_a_dict(reporte: Any) -> dict[str, Any]:
         "total_grupos_duplicados": _cifra_a_dict(
             reporte.total_grupos_duplicados
         ),
+        "grupos_duplicados_nombre": _grupos_nombre_a_dict(
+            reporte.grupos_duplicados_nombre
+        ),
+        "total_grupos_duplicados_nombre": _cifra_a_dict(
+            reporte.total_grupos_duplicados_nombre
+        ),
     }
+
+
+def _grupos_nombre_a_dict(grupos: Any) -> dict[str, Any]:
+    """Serializa los grupos por nombre (DC.14).
+
+    No se emite el nombre ni su canonico: el ``id`` es opaco y los
+    motivos de DC.9 ya vienen sin datos personales (regla 9).
+    """
+    serializados = [
+        {
+            "id": g.id,
+            "filas": list(g.filas),
+            "sospechoso": g.sospechoso,
+            "fila_conservar": g.fila_conservar,
+            "motivo_conservar": g.motivo_conservar,
+            "canonicos_identicos": g.canonicos_identicos,
+        }
+        for g in grupos
+    ]
+    return {"valor": len(serializados), "grupos": serializados}
 
 
 def _grupos_a_dict(
     grupos: Any,
 ) -> dict[str, Any]:
     """Serializa la tupla de ``GrupoDuplicados`` a un dict JSON."""
+    # ``GrupoDuplicados`` expone ``id`` y ``canonico``; el atributo
+    # ``id_canonico`` que se leia aqui no existe y reventaba en
+    # cuanto habia un grupo de verdad (ningun test de DC.13 llego a
+    # tener uno). El ``canonico`` no se emite: es el telefono.
     serializados = [
         {
-            "id_canonico": g.id_canonico,
+            "id": g.id,
             "filas": list(g.filas),
         }
         for g in grupos
@@ -385,6 +500,9 @@ def _cifra_a_dict(cifra: Any) -> dict[str, Any]:
         "valor": cifra.valor,
         "disponible": cifra.disponible,
         "motivo": cifra.motivo,
+        # DC.10 cierre 2: cada cifra se puede rastrear. DC.13 no lo
+        # exponia por HTTP; son indices de fila, no datos personales.
+        "filas": list(cifra.filas),
     }
 
 
