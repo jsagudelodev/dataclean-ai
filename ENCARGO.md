@@ -230,7 +230,7 @@ recuperar lo que se tiró.
   se normaliza y clasifica en **las tres**, y las cifras del reporte las cuentan
   todas.
 
-- ⬜ **DC.15 — Mil filas reales.**
+- ✅ **DC.15 — Mil filas reales.**
   El criterio de vendible de la sección 4 habla de «un Excel real y sucio de
   1.000 filas», y hasta hoy nadie lo ha medido: los tests son sintéticos y por
   ítem. Este ítem no añade funcionalidad, **mide la que hay**.
