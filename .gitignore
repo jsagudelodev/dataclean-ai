@@ -13,3 +13,4 @@ grafo.db
 grafo.db-shm
 grafo.db-wal
 pip.log
+logs/
