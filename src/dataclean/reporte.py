@@ -236,6 +236,58 @@ def _calcular_telefonos(
     )
 
 
+def _calcular_telefonos_multi(
+    tabla: pd.DataFrame,
+    columnas: list[str],
+) -> tuple[Cifra, Cifra, Cifra, Cifra]:
+    """Agrega las cifras de telefono sobre varias columnas (DC.18).
+
+    El cliente suele traer los telefonos repartidos en varias columnas
+    (``TELEFONO``, ``Cel``, ``movil 2``). DC.18 pide que el reporte las
+    **cuente todas**, no solo la primera. Esta funcion reutiliza
+    :func:`_calcular_telefonos` por columna y suma:
+
+      * ``valor`` -- total de celdas de cada tipo sumando las columnas
+        (un contacto con un movil en ``TELEFONO`` y un fijo en ``Cel``
+        aporta a las dos cifras).
+      * ``filas`` -- union de las filas que aportan a la cifra, para que
+        el rastreo de DC.10 (Cierre 2) siga apuntando a filas reales.
+
+    Con una sola columna se reduce exactamente a
+    :func:`_calcular_telefonos` (``valor == len(filas)``), por lo que el
+    caso de una sola columna no cambia de comportamiento (DC.18 Cierre 3).
+    """
+    existentes = [c for c in columnas if c in tabla.columns]
+    if not existentes:
+        motivo = _MOTIVO_SIN_COLUMNA_TELEFONO
+        return (
+            _cifra_no_disponible(motivo),
+            _cifra_no_disponible(motivo),
+            _cifra_no_disponible(motivo),
+            _cifra_no_disponible(motivo),
+        )
+
+    totales = [0, 0, 0, 0]
+    filas: tuple[set[int], set[int], set[int], set[int]] = (
+        set(), set(), set(), set(),
+    )
+    for columna in existentes:
+        cifras = _calcular_telefonos(tabla, columna)
+        for i, cifra in enumerate(cifras):
+            totales[i] += cifra.valor or 0
+            filas[i].update(cifra.filas)
+
+    return tuple(  # type: ignore[return-value]
+        Cifra(
+            valor=totales[i],
+            disponible=True,
+            motivo="",
+            filas=tuple(sorted(filas[i])),
+        )
+        for i in range(4)
+    )
+
+
 def _calcular_correos(
     tabla: pd.DataFrame,
     columna_correo: str | None,
@@ -321,6 +373,7 @@ def generar_reporte(
     tabla: pd.DataFrame,
     columna_telefono: str | None = None,
     columna_correo: str | None = None,
+    columnas_telefono: list[str] | None = None,
 ) -> Reporte:
     """Genera el reporte de limpieza a partir de una tabla.
 
@@ -328,9 +381,16 @@ def generar_reporte(
         tabla: la tabla ya cargada (vía ``cargar_tabla`` de DC.1).
         columna_telefono: nombre de la columna de telefonos. Si es
             ``None`` o la columna no esta, las cifras de telefono
-            y duplicados quedan no disponibles (Cierre 3).
+            y duplicados quedan no disponibles (Cierre 3). Sigue
+            siendo la columna sobre la que se agrupan los duplicados.
         columna_correo: nombre de la columna de correos. Misma
             semantica de "no disponible" si falta.
+        columnas_telefono: lista de columnas de telefono a contar en
+            las cifras (DC.18). Si se pasa, las cifras de telefono
+            suman **todas** esas columnas; si es ``None``, se usa
+            ``[columna_telefono]`` y el comportamiento es el de una
+            sola columna. Los grupos de duplicados siempre se calculan
+            sobre ``columna_telefono``.
 
     Retorna:
         Un :class:`Reporte` inmutable con todas las cifras. Cada
@@ -339,8 +399,15 @@ def generar_reporte(
     """
     registros_totales = len(tabla)
 
+    if columnas_telefono:
+        columnas = list(columnas_telefono)
+    elif columna_telefono:
+        columnas = [columna_telefono]
+    else:
+        columnas = []
+
     telefonos_normalizados, telefonos_moviles, telefonos_fijos, telefonos_invalidos = (
-        _calcular_telefonos(tabla, columna_telefono or "")
+        _calcular_telefonos_multi(tabla, columnas)
     )
 
     correos_marcados = _calcular_correos(tabla, columna_correo)

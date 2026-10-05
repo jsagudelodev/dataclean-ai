@@ -56,6 +56,7 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from dataclean.carga import ErrorDeCargaInesperado, cargar_tabla
+from dataclean.cargo import SeparadorFalso, separar_columna_nombre_cargo
 from dataclean.clasificacion import RolColumna, clasificar_columnas
 from dataclean.correo import validar_columna_correo
 from dataclean.duplicados import (
@@ -169,6 +170,7 @@ class _Normalizacion:
     columna_nombre: str | None
     columna_telefono: str | None
     columna_correo: str | None
+    columnas_telefono: list[str]
 
 
 def _entero_de_entorno(nombre: str, por_defecto: int) -> int:
@@ -326,6 +328,7 @@ class ServicioLimpieza:
             normalizacion.tabla,
             columna_telefono=normalizacion.columna_telefono,
             columna_correo=normalizacion.columna_correo,
+            columnas_telefono=normalizacion.columnas_telefono,
         )
         reporte_dict = _reporte_a_dict(reporte)
         reporte_dict["duplicados_por_nombre"] = _duplicados_por_nombre_a_dict(
@@ -405,44 +408,75 @@ def _primera_columna_con_rol(
     return None
 
 
+def _columnas_con_rol(
+    roles: dict[str, RolColumna], rol: RolColumna
+) -> list[str]:
+    """Todas las columnas con un rol, en el orden de la tabla (DC.18)."""
+    return [nombre for nombre, rol_columna in roles.items() if rol_columna == rol]
+
+
 def _normalizar(
     tabla: pd.DataFrame,
     columna_telefono: str | None,
     columna_correo: str | None,
     columna_nombre: str | None,
 ) -> _Normalizacion:
-    """DC.2 (clasificar) + DC.3/4 (tel) + DC.5 (correo) + DC.6 (nombre) + DC.8/9."""
+    """DC.2 (clasificar) + DC.3/4 (tel) + DC.5 (correo) + DC.6/7 (nombre) + DC.8/9.
+
+    DC.18 conecta dos piezas que ya existian pero el pipeline ignoraba:
+    se procesan **todas** las columnas de telefono (no solo la primera)
+    y se separa el cargo pegado al nombre (DC.7).
+    """
+    roles: dict[str, RolColumna] | None = None
     if columna_telefono is None or columna_correo is None or columna_nombre is None:
         roles = clasificar_columnas(tabla)
-        columna_telefono = columna_telefono or _primera_columna_con_rol(
-            roles, RolColumna.TELEFONO
-        )
+
+    # Telefonos: si el caller fija una columna, se respeta esa sola; si
+    # no, se detectan todas las columnas de telefono (DC.18 Cierre 2).
+    if columna_telefono is not None:
+        columnas_telefono = [columna_telefono]
+    elif roles is not None:
+        columnas_telefono = _columnas_con_rol(roles, RolColumna.TELEFONO)
+    else:
+        columnas_telefono = []
+
+    if roles is not None:
         columna_correo = columna_correo or _primera_columna_con_rol(
             roles, RolColumna.CORREO
         )
         columna_nombre = columna_nombre or _primera_columna_con_rol(
             roles, RolColumna.NOMBRE
         )
-    if columna_telefono not in tabla.columns:
-        columna_telefono = None
+
+    columnas_telefono = [c for c in columnas_telefono if c in tabla.columns]
+    columna_telefono = columnas_telefono[0] if columnas_telefono else None
     if columna_correo not in tabla.columns:
         columna_correo = None
     if columna_nombre not in tabla.columns:
         columna_nombre = None
 
-    if columna_telefono:
-        tabla = normalizar_columna_telefono(tabla, columna_telefono)
-        tabla = clasificar_columna_telefono(tabla, columna_telefono)
+    for columna in columnas_telefono:
+        tabla = normalizar_columna_telefono(tabla, columna)
+        tabla = clasificar_columna_telefono(tabla, columna)
     if columna_correo:
         tabla = validar_columna_correo(tabla, columna_correo)
     if columna_nombre:
         tabla = normalizar_columna_nombre(tabla, columna_nombre)
     tabla = _marcar_duplicados(tabla, columna_telefono, columna_nombre)
+    # El cargo se separa DESPUES de marcar duplicados: asi las columnas
+    # que anade (``_sin_cargo`` / ``_cargo``) no alteran el conteo de
+    # datos con que DC.8/DC.9 eligen la fila a conservar (DC.18 Cierre 3:
+    # el caso de una sola columna no cambia de comportamiento).
+    if columna_nombre:
+        tabla = separar_columna_nombre_cargo(
+            tabla, columna_nombre, SeparadorFalso()
+        )
     return _Normalizacion(
         tabla=tabla,
         columna_nombre=columna_nombre,
         columna_telefono=columna_telefono,
         columna_correo=columna_correo,
+        columnas_telefono=columnas_telefono,
     )
 
 

@@ -47,7 +47,10 @@ Diseno explicito:
 
 from __future__ import annotations
 
-from typing import Final, Protocol
+from typing import TYPE_CHECKING, Final, Protocol
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 # --- Interfaz: cualquier "LLM" que sepa separar nombre y cargo ----------
@@ -296,3 +299,49 @@ def separar_nombre_y_cargo(
     if cargo is None or cargo == "":
         return nombre, None
     return nombre, cargo
+
+
+# --- Wrapper de columna: lo que el endpoint conecta (DC.18) ---------------
+
+
+def separar_columna_nombre_cargo(
+    tabla: "pd.DataFrame",
+    columna: str,
+    separador: SeparadorNombreCargo | None = None,
+) -> "pd.DataFrame":
+    """Anade a ``tabla`` el nombre sin cargo y el cargo, en campos separados.
+
+    DC.18 (Cierre 1): el pipeline ya tenia DC.7 construida y probada,
+    pero el endpoint nunca la llamaba, asi que el cliente recibia
+    ``MARIA GOMEZ - GERENTE`` pegado. Esta funcion conecta lo que ya
+    existe (:func:`separar_nombre_y_cargo`) a nivel de columna,
+    siguiendo el patron de ``normalizar_columna_telefono`` /
+    ``normalizar_columna_nombre``.
+
+    Crea (sin mutar ``tabla``):
+      * ``f"{columna}_sin_cargo"``: el nombre sin el cargo pegado, o el
+        valor original cuando el separador no se atreve a cortar.
+      * ``f"{columna}_cargo"``: el cargo detectado (``str``), o ``None``
+        cuando no hay cargo o no se pudo separar.
+
+    Args:
+        tabla: ``DataFrame`` con la columna de nombres.
+        columna: nombre de la columna a separar.
+        separador: implementacion de :class:`SeparadorNombreCargo`. Si
+            es ``None``, cada fila conserva el campo entero
+            (``sin_cargo=valor``, ``cargo=None``): el sistema sigue
+            funcionando sin un LLM disponible (DC.7 Cierre 3).
+
+    Returns:
+        Un ``DataFrame`` nuevo con las dos columnas auxiliares anadidas.
+    """
+    sin_cargo: list[object] = []
+    cargos: list[str | None] = []
+    for valor in tabla[columna]:
+        nombre, cargo = separar_nombre_y_cargo(valor, separador)
+        sin_cargo.append(nombre)
+        cargos.append(cargo)
+    resultado = tabla.copy()
+    resultado[f"{columna}_sin_cargo"] = sin_cargo
+    resultado[f"{columna}_cargo"] = cargos
+    return resultado
