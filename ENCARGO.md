@@ -257,7 +257,7 @@ recuperar lo que se tiró.
   marcando, no se fuerza al mercado configurado; (3) ningún test de DC.3/DC.4
   se modifica para lograrlo.
 
-- ⬜ **DC.18 — El cargo y las columnas de teléfono que el pipeline ignora.**
+- ✅ **DC.18 — El cargo y las columnas de teléfono que el pipeline ignora.**
   DC.7 está construida y probada pero el endpoint no la llama, así que el
   cliente recibe `MARIA GOMEZ - GERENTE` sin separar. Y de varias columnas de
   teléfono (`TELEFONO`, `Cel`, `móvil 2`) solo se procesa la primera: las
