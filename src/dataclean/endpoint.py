@@ -56,7 +56,12 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from dataclean.carga import ErrorDeCargaInesperado, cargar_tabla
-from dataclean.cargo import SeparadorFalso, separar_columna_nombre_cargo
+from dataclean.cargo import (
+    SeparadorFalso,
+    SeparadorLLM,
+    SeparadorNombreCargo,
+    separar_columna_nombre_cargo,
+)
 from dataclean.clasificacion import RolColumna, clasificar_columnas
 from dataclean.correo import validar_columna_correo
 from dataclean.duplicados import (
@@ -415,6 +420,26 @@ def _columnas_con_rol(
     return [nombre for nombre, rol_columna in roles.items() if rol_columna == rol]
 
 
+# Variable de entorno que activa el LLM real para separar el cargo (DC.7).
+# Si no hay credencial de Anthropic configurada, se usa el separador
+# deterministico: asi el sistema funciona sin LLM (DC.7 Cierre 3) y la
+# suite corre sin red ni credenciales (regla 7).
+ENV_API_KEY_ANTHROPIC: Final[str] = "ANTHROPIC_API_KEY"
+
+
+def _crear_separador() -> SeparadorNombreCargo:
+    """Elige el separador de cargo segun haya o no credencial de LLM.
+
+    Con ``ANTHROPIC_API_KEY`` en el entorno se usa :class:`SeparadorLLM`
+    (Claude real); sin ella, :class:`SeparadorFalso` (deterministico). El
+    factory decide por configuracion, no por codigo, y mantiene el
+    comportamiento sin LLM intacto (DC.7 Cierre 3).
+    """
+    if os.environ.get(ENV_API_KEY_ANTHROPIC, "").strip():
+        return SeparadorLLM()
+    return SeparadorFalso()
+
+
 def _normalizar(
     tabla: pd.DataFrame,
     columna_telefono: str | None,
@@ -469,7 +494,7 @@ def _normalizar(
     # el caso de una sola columna no cambia de comportamiento).
     if columna_nombre:
         tabla = separar_columna_nombre_cargo(
-            tabla, columna_nombre, SeparadorFalso()
+            tabla, columna_nombre, _crear_separador()
         )
     return _Normalizacion(
         tabla=tabla,

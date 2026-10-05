@@ -20,6 +20,12 @@ dev = [
     "pytest>=8,<9",
     "httpx>=0.27,<1",
 ]
+# Separador de cargo con LLM real (DC.7 vía interfaz sustituible). Opcional:
+# sin este extra el sistema usa el separador deterministico y la suite corre
+# sin red ni credenciales (regla 7).
+llm = [
+    "anthropic>=0.40,<2",
+]
 
 [project.scripts]
 dataclean = "dataclean.__main__:main"

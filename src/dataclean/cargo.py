@@ -47,10 +47,15 @@ Diseno explicito:
 
 from __future__ import annotations
 
+import json
+import logging
+import os
 from typing import TYPE_CHECKING, Final, Protocol
 
 if TYPE_CHECKING:
     import pandas as pd
+
+_logger = logging.getLogger("dataclean.cargo")
 
 
 # --- Interfaz: cualquier "LLM" que sepa separar nombre y cargo ----------
@@ -224,6 +229,107 @@ class SeparadorPorPrefijo:
             return limpio, None
         cabeza, _, cola = limpio.rpartition(self._prefijo)
         return cabeza.strip(), cola.strip() or None
+
+
+# --- Implementacion real: un LLM (Claude), sustituible (DC.7 + DC.19) -----
+
+
+# Modelo por defecto. Configurable por entorno: para procesar en masa el
+# usuario puede elegir uno mas barato (p.ej. claude-haiku-4-5) sin tocar
+# codigo. No se baja de oficio: es decision del usuario.
+_MODELO_POR_DEFECTO: Final[str] = "claude-opus-5-5"
+ENV_MODELO_LLM: Final[str] = "DATACLEAN_LLM_MODELO"
+
+
+class SeparadorLLM:
+    """Separador de nombre y cargo con un LLM real (Claude), sustituible.
+
+    Implementa el mismo contrato :class:`SeparadorNombreCargo` que
+    :class:`SeparadorFalso`, pero delega en un modelo de Anthropic. Es la
+    implementacion que hace literal el "AI" del producto en el unico punto
+    donde el ENCARGO dice que entra el LLM (DC.7).
+
+    Cumple las reglas duras del proyecto:
+
+      * **DC.7 Cierre 2 (sustituible) + regla 7.** El cliente se recibe por
+        parametro (``cliente``), asi los tests inyectan uno falso y la
+        suite corre **sin red ni credenciales**. El cliente real se crea
+        de forma perezosa (import dentro del metodo) solo cuando se usa en
+        produccion: sin la dependencia ``anthropic`` instalada, el modulo
+        se importa igual.
+      * **DC.7 Cierre 3 (tolerante).** Ante CUALQUIER fallo -- sin libreria,
+        sin credencial, error de red, respuesta no parseable -- devuelve
+        ``(texto, None)``: conserva el campo y el sistema no se cae.
+      * **Regla 9.** Ni el nombre, ni el cargo, ni la credencial se
+        escriben en un log; los errores se registran solo por su tipo.
+      * **Regla 4 (conservar).** El prompt instruye al modelo a NO inventar
+        un cargo: ante la duda, ``cargo=null`` y el nombre es la celda
+        completa.
+    """
+
+    _SISTEMA: Final[str] = (
+        "Eres un extractor de datos. Recibes el contenido de UNA celda de "
+        "una hoja de contactos que puede mezclar el nombre de una persona "
+        "con su cargo. Devuelve SOLO un objeto JSON con dos claves: "
+        '"nombre" (el nombre de la persona, sin el cargo) y "cargo" (el '
+        "cargo en MAYUSCULAS, o null si la celda no trae un cargo claro). "
+        "No inventes un cargo: ante la duda, cargo=null y el nombre es la "
+        "celda completa. No expliques nada, responde solo el JSON."
+    )
+
+    def __init__(self, cliente: object | None = None, modelo: str | None = None) -> None:
+        self._cliente = cliente
+        self._modelo = modelo or os.environ.get(ENV_MODELO_LLM, _MODELO_POR_DEFECTO)
+
+    def _obtener_cliente(self) -> object:
+        if self._cliente is None:
+            import anthropic  # perezoso: solo si se usa de verdad  # noqa: PLC0415
+
+            self._cliente = anthropic.Anthropic()
+        return self._cliente
+
+    def separar(self, texto: str) -> tuple[str, str | None]:
+        if texto is None or not texto.strip():
+            return texto or "", None
+        limpio = texto.strip()
+        try:
+            respuesta = self._obtener_cliente().messages.create(  # type: ignore[attr-defined]
+                model=self._modelo,
+                max_tokens=200,
+                system=self._SISTEMA,
+                messages=[{"role": "user", "content": limpio}],
+            )
+            return self._parsear(self._texto_de(respuesta), limpio)
+        except Exception as exc:  # noqa: BLE001
+            # Regla 9: solo el tipo, nunca el contenido ni la credencial.
+            _logger.warning(
+                "el separador LLM no pudo separar: %s", type(exc).__name__
+            )
+            return limpio, None
+
+    @staticmethod
+    def _texto_de(respuesta: object) -> str:
+        for bloque in getattr(respuesta, "content", None) or []:
+            if getattr(bloque, "type", None) == "text":
+                return getattr(bloque, "text", "") or ""
+        return ""
+
+    @staticmethod
+    def _parsear(crudo: str, original: str) -> tuple[str, str | None]:
+        inicio = crudo.find("{")
+        fin = crudo.rfind("}")
+        if inicio < 0 or fin <= inicio:
+            return original, None
+        datos = json.loads(crudo[inicio : fin + 1])
+        nombre = datos.get("nombre")
+        cargo = datos.get("cargo")
+        if not isinstance(nombre, str) or not nombre.strip():
+            nombre = original
+        else:
+            nombre = nombre.strip()
+        if not isinstance(cargo, str) or not cargo.strip():
+            return nombre, None
+        return nombre, cargo.strip().upper()
 
 
 # --- Funcion de cara al reporte: tolerante a "sin LLM" -------------------
